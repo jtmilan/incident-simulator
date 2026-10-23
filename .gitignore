@@ -1,0 +1,17 @@
+# Local planning (PAUL) — kept out of the public repo
+.paul/
+
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# Test artifacts
+playwright-report/
+test-results/
+.lighthouseci/
+
+# OS / editor
+.DS_Store
+*.log
+.env*
