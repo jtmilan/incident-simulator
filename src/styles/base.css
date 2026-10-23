@@ -1,0 +1,231 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-bg);
+  /* Faint grid floor */
+  background-image:
+    linear-gradient(var(--color-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-grid) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: center top;
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+/* Slow cyan glow drifting over the grid */
+.glow {
+  position: fixed;
+  inset: -20vmax;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 40%, rgb(76 201 240 / 14%), transparent 45%);
+  animation: glow-drift 18s var(--ease-out) infinite alternate;
+}
+
+@keyframes glow-drift {
+  from {
+    transform: translate3d(-6vmax, -3vmax, 0);
+  }
+  to {
+    transform: translate3d(6vmax, 4vmax, 0);
+  }
+}
+
+a {
+  color: var(--color-accent);
+  text-underline-offset: 3px;
+  transition: color var(--dur-hover) var(--ease-out);
+}
+
+a:hover {
+  color: var(--color-text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+/* ---- Status strip ---- */
+.status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-6);
+  padding: var(--space-3) var(--space-6);
+  border-bottom: var(--border);
+  background: rgb(17 24 32 / 80%);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-ok);
+  box-shadow: 0 0 0 0 rgb(61 220 151 / 60%);
+  animation: pulse 2.4s var(--ease-out) infinite;
+}
+
+@keyframes pulse {
+  70% {
+    box-shadow: 0 0 0 8px rgb(61 220 151 / 0%);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(61 220 151 / 0%);
+  }
+}
+
+/* ---- Hero ---- */
+.hero {
+  flex: 1;
+  width: 100%;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: clamp(var(--space-12), 10vh, 8rem) var(--space-6) var(--space-12);
+}
+
+.eyebrow {
+  margin: 0 0 var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+h1 {
+  margin: 0;
+  font-size: var(--text-display);
+  font-weight: 600;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+}
+
+.lede {
+  max-width: 40rem;
+  margin: var(--space-6) 0 var(--space-12);
+  font-size: var(--text-lg);
+  color: var(--color-text);
+}
+
+/* ---- Rollout panel ---- */
+.rollout {
+  max-width: 34rem;
+  border: var(--border);
+  border-radius: var(--radius-md);
+  background: var(--color-panel);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.rollout-title {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.rollout ol {
+  margin: 0;
+  padding: var(--space-2) 0;
+  list-style: none;
+}
+
+.rollout li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+}
+
+.rollout .state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-muted);
+}
+
+.rollout .state.ready {
+  color: var(--color-ok);
+}
+
+/* ---- Footer ---- */
+.site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-6);
+  padding: var(--space-4) var(--space-6);
+  border-top: var(--border);
+  background: rgb(17 24 32 / 80%);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+.site-footer p {
+  margin: 0;
+}
+
+.provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+@media (max-width: 40rem) {
+  .hero {
+    padding-inline: var(--space-4);
+  }
+
+  .status-strip,
+  .site-footer {
+    padding-inline: var(--space-4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glow,
+  .status-dot {
+    animation: none;
+  }
+
+  a {
+    transition: none;
+  }
+}
+
+.status-label {
+  color: var(--color-ok);
+  font-weight: 600;
+}

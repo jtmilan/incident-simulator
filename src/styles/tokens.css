@@ -1,0 +1,48 @@
+/* Design tokens: "mission control". One accent; status colors only on state change. */
+:root {
+  /* Surfaces and text */
+  --color-bg: #0a0e13;
+  --color-panel: #111820;
+  --color-grid: #1c2631;
+  --color-text: #e6edf3;
+  --color-muted: #7c8896;
+
+  /* Single accent: the focal element only */
+  --color-accent: #4cc9f0;
+
+  /* Status: always paired with an icon and a label */
+  --color-ok: #3ddc97;
+  --color-warn: #f5a524;
+  --color-crit: #ff4d5e;
+
+  /* Type */
+  --font-sans: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-display: clamp(2.5rem, 7vw + 1rem, 6rem);
+
+  /* Spacing */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* Motion */
+  --dur-hover: 150ms;
+  --dur-panel: 280ms;
+  --dur-shatter: 500ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --stagger: 50ms;
+
+  /* Shape */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --border: 1px solid var(--color-grid);
+}
