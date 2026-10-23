@@ -1,4 +1,5 @@
 import type { ZONES } from './config.ts';
+import type { Rng } from './rng.ts';
 
 export type Zone = (typeof ZONES)[number];
 
@@ -84,3 +85,12 @@ export type SimEvent =
   | { type: 'timelineEvent'; t: number; entry: TimelineEvent }
   | { type: 'speedChanged'; t: number; speed: Speed }
   | { type: 'reset'; t: number; seed: number };
+
+/** What each subsystem gets on every tick. Subsystems mutate the state they are handed. */
+export interface TickContext {
+  t: number;
+  rng: Rng;
+  emit(event: SimEvent): void;
+  log(source: TimelineSource, severity: Severity, message: string): void;
+  startChaos(kind: ChaosKind, options: { durationMs: number; intensity?: number; target?: string }): ChaosRun;
+}
