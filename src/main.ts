@@ -38,3 +38,12 @@ if (provenance) renderProvenance(provenance);
 
 const counter = goatCounterCode(import.meta.env);
 if (counter) injectGoatCounter(document, counter);
+
+// ?debug loads a plain-text simulator console below the hero. Code-split, so normal visitors never download it.
+if (new URLSearchParams(window.location.search).has('debug')) {
+  void import('./debug/debug-view.ts').then(({ mountDebugView }) => {
+    const host = document.createElement('section');
+    document.querySelector('main')?.append(host);
+    mountDebugView(host);
+  });
+}
