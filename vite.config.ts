@@ -1,5 +1,8 @@
 import { execSync } from 'node:child_process';
+import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
+import { goatCounterCode } from './src/config/analytics.ts';
+import { buildCsp, cspMetaTag } from './src/config/csp.ts';
 
 // Provenance is resolved once, at config time. CI passes the real values;
 // a local build falls back to the checked-out commit so the footer still means something.
@@ -21,8 +24,25 @@ function resolveCommitSha(): string {
 process.env.VITE_COMMIT_SHA = resolveCommitSha();
 process.env.VITE_BUILD_TIME ??= new Date().toISOString();
 
+// GitHub Pages can't send response headers, so the CSP ships as a <meta> tag.
+// Build-only: the dev server injects styles from JS for HMR, which this policy would block.
+function cspPlugin(): Plugin {
+  return {
+    name: 'chaos-control-room:csp',
+    apply: 'build',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html) {
+        const policy = buildCsp({ goatCounterCode: goatCounterCode(process.env) });
+        return html.replace('<head>', `<head>\n    ${cspMetaTag(policy)}`);
+      },
+    },
+  };
+}
+
 export default defineConfig({
   base: '/chaos-control-room/',
+  plugins: [cspPlugin()],
   build: {
     target: 'es2022',
     sourcemap: true,
