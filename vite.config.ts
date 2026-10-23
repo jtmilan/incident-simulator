@@ -66,7 +66,7 @@ export default defineConfig(({ mode }) => ({
     passWithNoTests: true,
     coverage: {
       provider: 'v8',
-      include: ['src/config/**/*.ts'],
+      include: ['src/config/**/*.ts', 'src/sim/**/*.ts'],
       exclude: ['src/**/*.test.ts'],
       reporter: ['text', 'lcov'],
       thresholds: { lines: 90 },
