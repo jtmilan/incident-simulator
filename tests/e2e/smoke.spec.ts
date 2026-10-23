@@ -35,7 +35,7 @@ test('renders the placeholder with build provenance and a CSP', async ({ page },
 
   await expect(page.getByRole('heading', { level: 1, name: 'Chaos Control Room' })).toBeVisible();
   await expect(page.getByTestId('status')).toContainText('SLO 99.9% · budget 100% · all systems normal');
-  await expect(page.getByText('Simulation: no real cluster runs behind this page.')).toBeVisible();
+  await expect(page.locator('.site-footer').getByText('Simulation: no real cluster runs behind this page.')).toBeVisible();
 
   await expect(page.getByTestId('build-sha')).toHaveText(expectedSha ? expectedSha.slice(0, 7) : /^([0-9a-f]{7}|dev)$/);
   await expect(page.getByTestId('build-run')).toHaveText(/^(#\d+|local)$/);
@@ -72,6 +72,8 @@ test('stops ambient motion when the visitor prefers reduced motion', async ({ pa
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(entry);
 
-  const animation = await page.locator('.glow').evaluate((el) => getComputedStyle(el).animationName);
-  expect(animation).toBe('none');
+  const glow = await page.locator('.glow').evaluate((el) => getComputedStyle(el).animationName);
+  const letter = await page.locator('.headline .ch').first().evaluate((el) => getComputedStyle(el).animationName);
+  expect(glow).toBe('none');
+  expect(letter).toBe('none');
 });

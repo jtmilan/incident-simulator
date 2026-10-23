@@ -3,12 +3,17 @@ import '@fontsource/space-grotesk/latin-600.css';
 import '@fontsource/jetbrains-mono/latin-400.css';
 import './styles/tokens.css';
 import './styles/base.css';
+import './styles/hero.css';
 
 import { isSoftwareRenderer, webglRendererName } from './app/gpu.ts';
 import { createLoop } from './app/loop.ts';
 import { goatCounterCode, injectGoatCounter } from './config/analytics.ts';
 import { getBuildInfo } from './config/build-info.ts';
+import type { SceneHandle } from './scene/mount.ts';
 import { Simulation } from './sim/simulation.ts';
+import { mountHeadline } from './ui/headline.ts';
+import { ModeController, parseMode, type Mode } from './ui/modes.ts';
+import { mountStatusStrip } from './ui/status-strip.ts';
 
 function linkOrText(label: string, href: string | null, testId: string): HTMLElement {
   const el = document.createElement(href ? 'a' : 'span');
@@ -42,16 +47,76 @@ if (provenance) renderProvenance(provenance);
 const counter = goatCounterCode(import.meta.env);
 if (counter) injectGoatCounter(document, counter);
 
-// One simulator and one clock for everything on the page.
+// One simulator and one clock for everything on the page. The status strip reads it from the start.
 const sim = new Simulation({ seed: 1 });
 const loop = createLoop();
 loop.add((dt) => sim.advance(dt));
-// The clock runs only once something shows the simulation (the scene, or the ?debug console).
+const statusRoot = document.querySelector<HTMLElement>('[data-testid="status"]');
+if (statusRoot) mountStatusStrip(statusRoot, { sim, loop });
+loop.start();
 
 const debug = new URLSearchParams(window.location.search).has('debug');
 if (debug) (window as unknown as { __ccr?: { sim: Simulation } }).__ccr = { sim };
 
-// The 3D scene loads after first paint so the hero text is never waiting on WebGL.
+const headline = document.querySelector<HTMLElement>('[data-headline]');
+if (headline) mountHeadline(headline);
+
+// ---- Hero ⇄ console ----
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const hero = document.querySelector<HTMLElement>('.hero');
+const consoleLayer = document.querySelector<HTMLElement>('.console');
+const consoleTitle = document.querySelector<HTMLElement>('#console-title');
+const enterButton = document.querySelector<HTMLButtonElement>('[data-enter]');
+const backButton = document.querySelector<HTMLButtonElement>('[data-back]');
+let scene: SceneHandle | null = null;
+let previousMode: Mode | null = null;
+
+const applyMode = (mode: Mode) => {
+  document.body.dataset.mode = mode;
+  const showingConsole = mode !== 'hero';
+  if (hero) hero.inert = mode === 'console';
+  if (consoleLayer) consoleLayer.inert = mode === 'hero';
+  scene?.setFraming(showingConsole && mode !== 'closing' ? 'console' : 'hero');
+  scene?.setLabelsVisible(mode === 'console');
+  if (mode === 'console' && previousMode === 'opening') consoleTitle?.focus({ preventScroll: true });
+  if (mode === 'hero' && previousMode === 'closing') enterButton?.focus({ preventScroll: true });
+  previousMode = mode;
+};
+
+const modes = new ModeController(
+  {
+    onModeChange: applyMode,
+    setIris: (radius, x, y) => {
+      consoleLayer?.style.setProperty('--iris-r', `${radius.toFixed(1)}px`);
+      consoleLayer?.style.setProperty('--iris-x', `${x.toFixed(0)}px`);
+      consoleLayer?.style.setProperty('--iris-y', `${y.toFixed(0)}px`);
+    },
+    viewport: () => ({ width: window.innerWidth, height: window.innerHeight }),
+    reducedMotion,
+  },
+  parseMode(window.location),
+);
+loop.add((_dt, now) => modes.tick(now));
+
+/** Where the iris opens: the pointer, or the button's centre for keyboard activation. */
+const origin = (event: MouseEvent, el: HTMLElement) => {
+  if (event.detail > 0) return { x: event.clientX, y: event.clientY };
+  const rect = el.getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+};
+enterButton?.addEventListener('click', (event) => {
+  const { x, y } = origin(event, enterButton);
+  modes.open(x, y);
+  history.replaceState(null, '', '#console');
+});
+backButton?.addEventListener('click', (event) => {
+  const { x, y } = origin(event, backButton);
+  modes.close(x, y);
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+});
+
+// ---- 3D scene ----
+// Loads after first paint so the hero text never waits on WebGL.
 const whenIdle = (fn: () => void): void => {
   // Safari has no requestIdleCallback.
   if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(fn, { timeout: 800 });
@@ -61,12 +126,15 @@ const loadScene = () =>
   whenIdle(() => {
     import('./scene/mount.ts')
       .then(({ mountScene }) => mountScene({ sim, loop }))
-      .then((mounted) => {
-        if (mounted) loop.start();
+      .then((handle) => {
+        scene = handle;
+        scene?.setFraming(modes.mode === 'hero' ? 'hero' : 'console', true);
+        scene?.setLabelsVisible(modes.mode === 'console');
       })
       // A failed chunk load (e.g. a stale tab after a redeploy) leaves the static layout in place.
       .catch((error: unknown) => console.warn('[scene] not loaded', error));
   });
+
 // With WebGL on the CPU (no GPU), wait for the visitor to engage before spending main-thread time
 // on a decorative scene; with a GPU, load it straight away.
 const ENGAGE = ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart', 'scroll'] as const;
@@ -88,7 +156,6 @@ if (debug) {
       const host = document.createElement('section');
       document.querySelector('main')?.append(host);
       mountDebugView(host, { sim, loop });
-      loop.start();
     })
     .catch((error: unknown) => console.warn('[debug] not loaded', error));
 }

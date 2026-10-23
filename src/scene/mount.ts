@@ -18,7 +18,13 @@ const nextIdle = () =>
  * Builds the scene in separate idle tasks (build → compile shaders → first frame) so no single
  * task blocks the page for long, even on devices that render WebGL on the CPU.
  */
-export async function mountScene({ sim, loop }: { sim: Simulation; loop: Loop }): Promise<(() => void) | null> {
+export interface SceneHandle {
+  setFraming(framing: 'hero' | 'console', immediate?: boolean): void;
+  setLabelsVisible(visible: boolean): void;
+  dispose(): void;
+}
+
+export async function mountScene({ sim, loop }: { sim: Simulation; loop: Loop }): Promise<SceneHandle | null> {
   const canvas = document.createElement('canvas');
   canvas.className = 'scene';
   canvas.setAttribute('aria-hidden', 'true');
@@ -65,11 +71,15 @@ export async function mountScene({ sim, loop }: { sim: Simulation; loop: Loop })
     }
   });
 
-  return () => {
-    off();
-    window.removeEventListener('resize', resize);
-    scene.dispose();
-    canvas.remove();
-    document.body.classList.remove('has-scene');
+  return {
+    setFraming: (framing, immediate) => scene.setFraming(framing, immediate),
+    setLabelsVisible: (visible) => scene.setLabelsVisible(visible),
+    dispose() {
+      off();
+      window.removeEventListener('resize', resize);
+      scene.dispose();
+      canvas.remove();
+      document.body.classList.remove('has-scene');
+    },
   };
 }

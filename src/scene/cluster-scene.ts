@@ -38,6 +38,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import type { Simulation } from '../sim/simulation.ts';
 import type { Pod } from '../sim/types.ts';
 import { createEffects } from './effects.ts';
+import { createSceneLabels, type LabelSpec } from './labels.ts';
 import { DB_CENTRES, INGRESS, NODE_CENTRES, PENDING_AREA, PLATFORM_TOP, SlotBook, slotPosition, type Vec3 } from './layout.ts';
 import { heatColor, PALETTE } from './palette.ts';
 import { createParticles, particlePosition, stepParticles, type ParticleEnv } from './particles.ts';
@@ -51,6 +52,9 @@ export interface ClusterScene {
   degrade(): boolean;
   /** Compile every shader up front, in its own task, instead of inside the first frame. */
   prewarm(): void;
+  /** Hero framing keeps the cluster right of the copy; console framing centres it. */
+  setFraming(framing: 'hero' | 'console', immediate?: boolean): void;
+  setLabelsVisible(visible: boolean): void;
   dispose(): void;
 }
 
@@ -166,6 +170,8 @@ function buildScene(
         uBg: { value: new Color(PALETTE.bg) },
         uCell: { value: 1.5 },
       },
+      // The background colour isn't tone-mapped, so the floor mustn't be either, or the horizon shows a seam.
+      toneMapped: false,
     }),
   );
   const floor = new Mesh(track(new PlaneGeometry(90, 90)), gridMaterial);
@@ -262,6 +268,14 @@ function buildScene(
   const effects = createEffects(scene, quality.drift);
   const edgeIdle = new Color(PALETTE.accent).multiplyScalar(1.3);
   const edgeAlert = new Color(PALETTE.crit).multiplyScalar(1.6);
+
+  // Names for what's on screen: nodes and zones, database roles (live), and the ingress.
+  const labels = createSceneLabels(document.body);
+  const labelSpecs: LabelSpec[] = [
+    ...Object.entries(NODE_CENTRES).map(([id, c]) => ({ key: id, x: c.x, y: 0, z: c.z + 2, text: `${id} · zone ${id.slice(-1)}`, tone: 'muted' as const })),
+    ...Object.entries(DB_CENTRES).map(([id, c]) => ({ key: id, x: c.x, y: 0, z: c.z + 1.9, text: id, tone: 'muted' as const })),
+    { key: 'ingress', x: INGRESS.x, y: 0, z: INGRESS.z + 0.9, text: 'ingress', tone: 'muted' as const },
+  ];
 
   const slots = new SlotBook();
   const visuals = new Map<string, PodVisual>();
@@ -424,6 +438,12 @@ function buildScene(
     ringMaterial.opacity = MathUtils.damp(ringMaterial.opacity, primary?.up ? 1 : 0.15, DAMP, dt);
     ring.rotation.z += dt * 0.6;
 
+    // Camera re-frames between hero and console (≈ 1.5 s ease-out).
+    if (Math.abs(framing - framingTarget) > 0.0005) {
+      framing = MathUtils.damp(framing, framingTarget, 2.6, dt);
+      applyView();
+    }
+
     // Slow ambient camera drift, off for reduced motion.
     const drift = quality.drift ? 1 : 0;
     camera.position.set(
@@ -432,8 +452,19 @@ function buildScene(
       cameraBase.z,
     );
     camera.lookAt(lookAt);
+    camera.updateMatrixWorld();
+
+    for (const spec of labelSpecs) {
+      const instance = db.instances.find((x) => x.id === spec.key);
+      if (!instance) continue;
+      spec.text = `${instance.id} · ${instance.up ? instance.role : 'down'}`;
+      spec.tone = !instance.up ? 'down' : instance.role === 'primary' ? 'primary' : 'muted';
+    }
+    labels.update(camera, size.width, size.height, labelSpecs);
   }
 
+  let framing = 0;
+  let framingTarget = 0;
   let bloomEnabled = composer !== null;
   let particleLimit = particleCapacity;
   let size = { width: 1, height: 1 };
@@ -465,17 +496,34 @@ function buildScene(
     return false;
   }
 
-  function resize(width: number, height: number) {
-    size = { width, height };
+  function applyView() {
+    const { width, height } = size;
     const aspect = width / Math.max(height, 1);
     camera.aspect = aspect;
-    // Narrow (portrait) screens pull the camera back so all three nodes stay in frame.
-    const pull = aspect < 1 ? 1.7 : aspect < 1.4 ? 1.2 : 1;
+    // Narrow (portrait) screens pull the camera back so all three nodes stay in frame; the console
+    // pulls back a touch more because the scene shares the screen with panels.
+    const pull = (aspect < 1 ? 1.7 : aspect < 1.4 ? 1.2 : 1) * (1 + 0.12 * framing);
     cameraBase.set(0, 11 * pull, 23 * pull);
-    // On wide screens the hero copy owns the left side, so shift the cluster into the right part.
-    if (aspect >= 1.2) camera.setViewOffset(width, height, -width * 0.13, 0, width, height);
+    // Hero: the copy owns the left side, so the cluster sits right. Console: centred, and lifted
+    // so the ingress clears the timeline panel along the bottom.
+    const shift = aspect >= 1.2 ? width * 0.13 * (1 - framing) : 0;
+    const lift = height * 0.1 * framing;
+    if (shift > 0.5 || lift > 0.5) camera.setViewOffset(width, height, -shift, lift, width, height);
     else camera.clearViewOffset();
     camera.updateProjectionMatrix();
+  }
+
+  function setFraming(next: 'hero' | 'console', immediate = false) {
+    framingTarget = next === 'console' ? 1 : 0;
+    if (immediate || !quality.drift) {
+      framing = framingTarget;
+      applyView();
+    }
+  }
+
+  function resize(width: number, height: number) {
+    size = { width, height };
+    applyView();
     renderer.setSize(width, height, false);
     if (composer && bloom) {
       composer.setSize(width, height);
@@ -510,6 +558,7 @@ function buildScene(
 
   function dispose() {
     unsubscribe.forEach((off) => off());
+    labels.dispose();
     effects.dispose();
     pods.dispose();
     particleMesh.dispose();
@@ -519,5 +568,5 @@ function buildScene(
     renderer.dispose();
   }
 
-  return { update, render, resize, degrade, prewarm, dispose };
+  return { update, render, resize, degrade, prewarm, setFraming, setLabelsVisible: (visible: boolean) => labels.setVisible(visible), dispose };
 }

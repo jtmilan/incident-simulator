@@ -12,37 +12,51 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <script type="module" src="/src/main.ts"></script>
   </head>
-  <body>
+  <body data-mode="hero">
     <div class="glow" aria-hidden="true"></div>
 
     <header class="status-strip">
-      <span class="status" data-testid="status">
+      <span class="status" data-testid="status" data-level="ok">
         <span class="status-dot" aria-hidden="true"></span>
-        <span class="status-label">OK</span>
-        <span>SLO 99.9% · budget 100% · all systems normal</span>
+        <span class="status-label" data-status-label>OK</span>
+        <span data-status-text>SLO 99.9% · budget 100% · all systems normal</span>
       </span>
       <span>chaos-control-room · v0.1</span>
     </header>
 
-    <main class="hero">
+    <main class="hero" id="hero">
       <p class="eyebrow">Simulation · Platform engineering</p>
-      <h1>Chaos Control Room</h1>
+      <h1 class="headline" data-headline>Chaos Control Room</h1>
       <p class="lede">
         An interactive simulation of a Kubernetes platform under failure. Kill pods, inject errors, surge
         traffic and fail over the database, then watch SLOs, alerts, autoscaling and self-healing respond.
       </p>
-
-      <section class="rollout" aria-labelledby="rollout-title">
-        <h2 class="rollout-title" id="rollout-title">$ kubectl rollout status deploy/control-room</h2>
-        <ol>
-          <li><span>pipeline</span><span class="state ready">✓ Ready</span></li>
-          <li><span>simulation-engine</span><span class="state ready">✓ Ready</span></li>
-          <li><span>3d-scene</span><span class="state ready">✓ Ready</span></li>
-          <li><span>control-room</span><span class="state">○ Pending</span></li>
-          <li><span>guided-tour</span><span class="state">○ Pending</span></li>
-        </ol>
-      </section>
+      <div class="hero-actions">
+        <button type="button" class="btn-primary" data-enter>
+          Enter the control room <span aria-hidden="true">→</span>
+        </button>
+        <p class="hero-hint">No login, nothing to install. It's a simulation: no real cluster runs behind this page.</p>
+      </div>
     </main>
+
+    <section class="console" id="console" aria-labelledby="console-title" inert>
+      <header class="console-header">
+        <h2 id="console-title" tabindex="-1">Control room</h2>
+        <button type="button" class="btn-ghost" data-back>← Overview</button>
+      </header>
+      <div class="console-grid">
+        <aside class="panel" data-region="chaos" aria-label="Chaos experiments">
+          <h3 class="panel-title">Chaos experiments</h3>
+        </aside>
+        <div class="viewport" data-region="viewport"></div>
+        <aside class="panel" data-region="metrics" aria-label="Service health">
+          <h3 class="panel-title">Service health</h3>
+        </aside>
+        <section class="panel" data-region="timeline" aria-label="Incident timeline">
+          <h3 class="panel-title">Timeline</h3>
+        </section>
+      </div>
+    </section>
 
     <footer class="site-footer">
       <p class="provenance" data-provenance></p>
