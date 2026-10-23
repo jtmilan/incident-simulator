@@ -7,7 +7,7 @@ const entry = expectedSha ? `./?v=${expectedSha}` : './';
 const blockingViolations = async (page: Page) =>
   (await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze()).violations
     .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-    .map((v) => `${v.id}: ${v.help}`);
+    .map((v) => `${v.id}: ${v.help} [${v.nodes.map((n) => n.target.join(' ')).join(', ')}]`);
 
 const tourCard = (page: Page) => page.locator('.tour-card');
 const consoleTour = (page: Page) => page.getByRole('button', { name: 'Tour', exact: true });
@@ -99,10 +99,10 @@ test('#tour deep link starts the tour; Esc and Skip end it and hand focus back',
   // Start from the console; paused motion is called out instead of looking stuck.
   await consoleTour(page).click();
   await expect(page).toHaveURL(/#tour$/);
-  await page.getByRole('button', { name: 'Pause motion' }).click();
+  await page.getByRole('complementary', { name: 'Chaos experiments' }).getByRole('button', { name: 'Pause motion' }).click();
   await page.getByRole('dialog', { name: 'Meet checkout-api' }).getByRole('button', { name: 'Next' }).click();
   await expect(page.getByRole('dialog', { name: /kill a pod/ }).getByRole('status')).toContainText('Motion is paused');
-  await page.getByRole('button', { name: 'Pause motion' }).click();
+  await page.getByRole('complementary', { name: 'Chaos experiments' }).getByRole('button', { name: 'Pause motion' }).click();
 
   // Restarting a running tour keeps the #tour URL; then Skip.
   await consoleTour(page).click();

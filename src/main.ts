@@ -13,10 +13,13 @@ import { motion } from './app/motion.ts';
 import { goatCounterCode, injectGoatCounter } from './config/analytics.ts';
 import { getBuildInfo } from './config/build-info.ts';
 import type { SceneHandle } from './scene/mount.ts';
+import { getMotion, provideMotion } from './motion/ready.ts';
 import { Simulation } from './sim/simulation.ts';
 import type { Command } from './sim/types.ts';
+import { DURATION, EASE, STAGGER } from './motion/presets.ts';
+import { mountBootRing } from './ui/boot-ring.ts';
 import { mountConsole } from './ui/console.ts';
-import { el } from './ui/dom.ts';
+import { clearInline, el } from './ui/dom.ts';
 import { mountHeadline } from './ui/headline.ts';
 import { mountMobileTabs, type MobileTabs } from './ui/mobile-tabs.ts';
 import { ModeController, parseMode, type Mode } from './ui/modes.ts';
@@ -68,7 +71,13 @@ mountStatusStrip([...document.querySelectorAll<HTMLElement>('[data-testid="statu
 loop.start();
 
 const debug = new URLSearchParams(window.location.search).has('debug');
-if (debug) (window as unknown as { __ccr?: { sim: Simulation } }).__ccr = { sim };
+if (debug) {
+  const motionState = () => {
+    const registry = getMotion()?.registry;
+    return registry ? { loaded: true, paused: registry.paused, active: registry.active, reduced: registry.reduced } : { loaded: false };
+  };
+  (window as unknown as { __ccr?: unknown }).__ccr = { sim, motion: motionState };
+}
 
 const headline = document.querySelector<HTMLElement>('[data-headline]');
 if (headline) mountHeadline(headline);
@@ -134,11 +143,26 @@ const syncScene = (mode: Mode, immediate = false) => {
   scene?.setLabelsVisible(mode === 'console');
 };
 
+/** Console panels cascade in while the iris opens (no-op until the motion engine is loaded). */
+const cascadeConsole = () => {
+  const motionApi = getMotion();
+  const panels = [...document.querySelectorAll<HTMLElement>('.console-header, .console .panel')];
+  // Movement only: panels stay fully opaque, so their text never dips below contrast mid-entrance.
+  motionApi?.animate(panels, {
+    translateY: [14, 0],
+    duration: DURATION.enter,
+    ease: EASE.enter,
+    delay: motionApi.stagger(STAGGER.panel, { start: 120 }),
+    onComplete: () => clearInline(panels, ['transform']),
+  });
+};
+
 const applyMode = (mode: Mode) => {
   document.body.dataset.mode = mode;
   if (hero) hero.inert = mode === 'console';
   if (consoleLayer) consoleLayer.inert = mode === 'hero';
   syncScene(mode);
+  if (mode === 'opening') cascadeConsole();
   if (mode === 'closing' || mode === 'hero') tour.end(false);
   if (mode === 'console' && pendingFocus === 'console') consoleTitle?.focus({ preventScroll: true });
   if (mode === 'console' && pendingFocus === 'tour') tour.start(tourOpener);
@@ -276,6 +300,27 @@ const startScene = () => {
 };
 if (document.readyState === 'complete') startScene();
 else window.addEventListener('load', startScene, { once: true });
+
+mountBootRing(document.body, { sim, loop, reducedMotion });
+
+// "Pause motion" in the status strip, on every view (WCAG 2.2.2); the console has its own button too.
+const motionToggles = [...document.querySelectorAll<HTMLButtonElement>('[data-motion-toggle]')];
+motionToggles.forEach((b) => b.addEventListener('click', () => motion.set(!motion.paused)));
+motion.subscribe((paused) => motionToggles.forEach((b) => b.setAttribute('aria-pressed', String(paused))));
+
+// ---- Motion engine ----
+// anime.js arrives in its own chunk once the page is idle. Until then (or if it never loads)
+// everything that would animate simply shows its end state.
+whenIdle(() => {
+  import('./motion/engine.ts')
+    .then(({ startMotion }) => {
+      const api = startMotion({ loop, reducedMotion });
+      provideMotion(api);
+      // A preference changed mid-visit applies at once: running animations jump to their end.
+      window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (e) => api.registry.setReduced(e.matches));
+    })
+    .catch((error: unknown) => console.warn('[motion] not loaded', error));
+});
 
 // ?debug loads a plain-text simulator console below the hero. Code-split, so normal visitors never download it.
 if (debug) {

@@ -150,29 +150,36 @@
   transform: rotate(-90deg);
 }
 
-.ring circle {
-  fill: none;
-  stroke-width: 7;
-}
-
-.ring-track {
+.dial-tick {
   stroke: var(--color-grid);
-}
-
-.ring-value {
-  stroke: var(--color-ok);
+  stroke-width: 2.4;
   stroke-linecap: round;
-  transition:
-    stroke-dashoffset 0.4s var(--ease-out),
-    stroke 0.3s;
+  transition: stroke 0.3s;
 }
 
-.ring[data-tone='warn'] .ring-value {
+.dial-tick[data-lit='true'] {
+  stroke: var(--color-ok);
+}
+
+.ring[data-tone='warn'] .dial-tick[data-lit='true'] {
   stroke: var(--color-warn);
 }
 
-.ring[data-tone='crit'] .ring-value {
+.ring[data-tone='crit'] .dial-tick[data-lit='true'] {
   stroke: var(--color-crit);
+}
+
+/* Budget gone: the whole dial turns to a dim red, the loudest state rather than the quietest. */
+.ring[data-exhausted='true'] .dial-tick {
+  stroke: rgb(255 77 94 / 45%);
+}
+
+.ring[data-tone='warn'] .ring-pct {
+  color: var(--color-warn);
+}
+
+.ring[data-tone='crit'] .ring-pct {
+  color: var(--color-crit);
 }
 
 .ring-pct {
@@ -375,7 +382,7 @@
 
   .action,
   .action-bar,
-  .ring-value {
+  .dial-tick {
     transition: none;
   }
 }

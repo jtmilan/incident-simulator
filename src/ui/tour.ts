@@ -2,7 +2,9 @@ import type { Loop } from '../app/loop.ts';
 import { motion } from '../app/motion.ts';
 import type { Simulation } from '../sim/simulation.ts';
 import type { SimEvent } from '../sim/types.ts';
-import { el } from './dom.ts';
+import { DURATION, EASE } from '../motion/presets.ts';
+import { getMotion } from '../motion/ready.ts';
+import { clearInline, el } from './dom.ts';
 import { placeCard, statusLine, TOUR_STEPS, type Box, type StepProgress, type TourStep } from './tour-script.ts';
 
 // The guided tour on screen: a spotlight that follows the step's target and a step card beside it.
@@ -69,7 +71,10 @@ export function createTour({ sim, loop, reducedMotion, reveal, fallbackFocus, on
   const next = button('tour-next', 'Next');
   const nav = el('div', 'tour-nav');
   nav.append(skip, back, next);
-  card.append(count, track, title, body, status, nav);
+  // Content sits in an inner wrapper so its entrance can move it while the card itself is positioned.
+  const inner = el('div', 'tour-inner');
+  inner.append(count, track, title, body, status, nav);
+  card.append(inner);
 
   let running = false;
   let index = 0;
@@ -77,6 +82,8 @@ export function createTour({ sim, loop, reducedMotion, reveal, fallbackFocus, on
   let progress: StepProgress[] = [];
   let ran = new Set<number>();
   let box: Box | null = null;
+  /** While the engine eases the spotlight to a new target: where it came from and how far along (0→1). */
+  let blend: { from: Box; v: number } | null = null;
   /** The element the spotlight frames and the card's size: looked up when the step or its state changes, not per frame. */
   let target: HTMLElement | null = null;
   let cardSize = { width: 0, height: 0 };
@@ -95,6 +102,22 @@ export function createTour({ sim, loop, reducedMotion, reveal, fallbackFocus, on
 
   /** Finds the current target and brings it on screen (selecting its tab on phones). */
   const retarget = () => {
+    // Ease from the current frame to the new target with inOut(3); the frame loop keeps following
+    // the target if it moves meanwhile. Without the engine, the damping below does the move.
+    const motionApi = getMotion();
+    // While motion is paused the engine doesn't advance, so the frame loop's damping does the move.
+    if (motionApi && box && !reducedMotion && !motion.paused) {
+      const b = { from: { ...box }, v: 0 };
+      blend = b;
+      motionApi.animate(b, {
+        v: 1,
+        duration: DURATION.state,
+        ease: EASE.state,
+        onComplete: () => {
+          if (blend === b) blend = null;
+        },
+      });
+    }
     target = document.querySelector<HTMLElement>(`[data-tour="${targetId()}"]`);
     if (!target) return;
     reveal?.(target);
@@ -137,7 +160,8 @@ export function createTour({ sim, loop, reducedMotion, reveal, fallbackFocus, on
     next.textContent = i === steps.length - 1 ? 'Finish' : 'Next';
     measureCard();
     retarget();
-    if (!reducedMotion) card.animate?.([{ opacity: 0, translate: '0 6px' }, { opacity: 1, translate: '0 0' }], { duration: 240, easing: 'cubic-bezier(0.2, 0, 0, 1)' });
+    // Text moves in rather than fading from invisible, so it is readable (and at full contrast) throughout.
+    getMotion()?.animate(inner, { translateY: [8, 0], duration: DURATION.enter, ease: EASE.enter, onComplete: () => clearInline([inner], ['transform']) });
     if (focus) title.focus({ preventScroll: true });
   };
 
@@ -187,7 +211,15 @@ export function createTour({ sim, loop, reducedMotion, reveal, fallbackFocus, on
     } else {
       const want: Box = { left: rect.left - SPOT_PAD, top: rect.top - SPOT_PAD, width: rect.width + SPOT_PAD * 2, height: rect.height + SPOT_PAD * 2 };
       if (box === null || reducedMotion) box = want;
-      else {
+      else if (blend) {
+        const { from, v } = blend;
+        box = {
+          left: from.left + (want.left - from.left) * v,
+          top: from.top + (want.top - from.top) * v,
+          width: from.width + (want.width - from.width) * v,
+          height: from.height + (want.height - from.height) * v,
+        };
+      } else {
         const k = 1 - Math.exp(-SPOT_LAMBDA * Math.min(dtMs, 100) / 1_000);
         box = {
           left: box.left + (want.left - box.left) * k,
@@ -240,6 +272,7 @@ export function createTour({ sim, loop, reducedMotion, reveal, fallbackFocus, on
     ran = new Set();
     ownResets = 0;
     box = null;
+    blend = null;
     target = null;
     document.body.append(spot, card);
     document.body.dataset.tour = 'on';

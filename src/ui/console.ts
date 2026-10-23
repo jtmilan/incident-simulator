@@ -1,9 +1,11 @@
 import type { Loop } from '../app/loop.ts';
-import { el } from './dom.ts';
+import { clearInline, el } from './dom.ts';
 import { motion } from '../app/motion.ts';
 import type { Simulation } from '../sim/simulation.ts';
 import { HEALTHY_ERROR_RATIO, HEALTHY_P99_MS } from '../sim/config.ts';
-import type { Postmortem } from '../sim/types.ts';
+import type { Postmortem, TimelineEvent } from '../sim/types.ts';
+import { DURATION, EASE, STAGGER, dialChange, dialTicks } from '../motion/presets.ts';
+import { getMotion } from '../motion/ready.ts';
 import { configButton, createConfigDialog, type ConfigKey } from './config-dialog.ts';
 import { createSparkline } from './sparkline.ts';
 import {
@@ -29,6 +31,8 @@ const ALERT_TEXT = { inactive: '✓ ok', pending: '◔ pending', firing: '● fi
 const SEVERITY_ICON = { info: '·', ok: '✓', warn: '▲', crit: '●' } as const;
 const CAPTION_SOURCES = new Set(['chaos', 'alertmanager', 'hpa', 'db']);
 const SVG = 'http://www.w3.org/2000/svg';
+/** Ticks on the error-budget dial. */
+const DIAL_TICKS = 60;
 
 
 let openConfig: ((key: ConfigKey, opener: HTMLElement) => void) | null = null;
@@ -91,6 +95,13 @@ export function mountConsole(regions: ConsoleRegions, { sim, loop }: { sim: Simu
       sim.dispatch(action.command);
       if (action.id === 'killPod') lastKillAt = sim.state.t;
       button.setAttribute('aria-disabled', 'true'); // until the next refresh shows the run
+      // Spring press: the CSS transform transition is off while it runs, and the inline transform
+      // is cleared afterwards so the hover lift works again.
+      const motionApi = getMotion();
+      if (motionApi) {
+        button.style.transition = 'none';
+        motionApi.animate(button, { scale: [0.97, 1], ease: motionApi.press, onComplete: () => clearInline([button], ['transform', 'transition']) });
+      }
     });
     actions.append(button);
     cards.set(action.id, { button, state, bar });
@@ -130,18 +141,22 @@ export function mountConsole(regions: ConsoleRegions, { sim, loop }: { sim: Simu
   const svg = document.createElementNS(SVG, 'svg');
   svg.setAttribute('viewBox', '0 0 80 80');
   svg.setAttribute('aria-hidden', 'true');
-  const track = document.createElementNS(SVG, 'circle');
-  const value = document.createElementNS(SVG, 'circle');
-  for (const c of [track, value]) {
-    c.setAttribute('cx', '40');
-    c.setAttribute('cy', '40');
-    c.setAttribute('r', '34');
-    svg.append(c);
-  }
-  track.setAttribute('class', 'ring-track');
-  value.setAttribute('class', 'ring-value');
-  const circumference = 2 * Math.PI * 34;
-  value.setAttribute('stroke-dasharray', circumference.toFixed(2));
+  // A dial of ticks: lit ticks are the budget left, and they switch off as it burns.
+  const ticks = Array.from({ length: DIAL_TICKS }, (_, i) => {
+    const angle = (i / DIAL_TICKS) * 2 * Math.PI;
+    const line = document.createElementNS(SVG, 'line');
+    // Quarter marks reach further in, like a gauge.
+    const inner = i % (DIAL_TICKS / 4) === 0 ? 25 : 29;
+    line.setAttribute('x1', (40 + inner * Math.cos(angle)).toFixed(2));
+    line.setAttribute('y1', (40 + inner * Math.sin(angle)).toFixed(2));
+    line.setAttribute('x2', (40 + 37 * Math.cos(angle)).toFixed(2));
+    line.setAttribute('y2', (40 + 37 * Math.sin(angle)).toFixed(2));
+    line.setAttribute('class', 'dial-tick');
+    line.dataset.lit = 'true';
+    svg.append(line);
+    return line;
+  });
+  let litTicks = DIAL_TICKS;
   const ringPct = el('span', 'ring-pct', '100%');
   ring.append(svg, ringPct);
   const sloCaption = el('p', 'block-note', SLO_CAPTION);
@@ -250,11 +265,21 @@ export function mountConsole(regions: ConsoleRegions, { sim, loop }: { sim: Simu
       live.textContent = `Incident resolved. Postmortem: time to recover ${formatClock(postmortem.timeToRecoverMs)}.`;
     }),
     sim.bus.on('reset', () => {
+      // Timeline seq restarts at 0: redraw from scratch on the next refresh.
+      lastSeq = -1;
+      timeline.replaceChildren();
       lastKillAt = null;
       card.hidden = true;
       captions.replaceChildren();
     }),
   ];
+
+  const ROWS = 40;
+  const row = (e: TimelineEvent) => {
+    const li = el('li', `row sev-${e.severity}`);
+    li.append(el('span', 'row-time', formatClock(e.t)), el('span', 'row-icon', SEVERITY_ICON[e.severity]), el('span', 'row-source', e.source), el('span', 'row-message', e.message));
+    return li;
+  };
 
   // ---- Refresh from the shared clock ----
   let pendingAnnouncement: string | null = null;
@@ -282,8 +307,20 @@ export function mountConsole(regions: ConsoleRegions, { sim, loop }: { sim: Simu
     speedButtons.forEach(({ s, b }) => b.setAttribute('aria-pressed', String(sim.speed === s)));
 
     const budget = budgetRing(state.slo.budgetRemaining);
-    value.setAttribute('stroke-dashoffset', (circumference * (1 - budget.fraction)).toFixed(2));
+    const lit = dialTicks(budget.fraction, DIAL_TICKS);
+    if (lit !== litTicks) {
+      const change = dialChange(litTicks, lit);
+      const changed = change.indices.map((i) => ticks[i]!);
+      changed.forEach((t) => (t.dataset.lit = String(change.lit)));
+      litTicks = lit;
+      // The new state is already drawn; the blip just shows where it changed, from the boundary out.
+      const motionApi = getMotion();
+      if (changed.length > 0 && changed.length < DIAL_TICKS) {
+        motionApi?.animate(changed, { opacity: [0.15, 1], duration: DURATION.enter, ease: EASE.enter, delay: motionApi.stagger(STAGGER.tick) });
+      }
+    }
     ring.dataset.tone = budget.tone;
+    ring.dataset.exhausted = String(lit === 0);
     ringPct.textContent = budget.pct;
     burn.textContent = burnText(state.slo);
 
@@ -308,14 +345,26 @@ export function mountConsole(regions: ConsoleRegions, { sim, loop }: { sim: Simu
 
     const newest = state.timeline.at(-1)?.seq ?? -1;
     if (newest !== lastSeq) {
+      // Rows are keyed by seq: only entries newer than the last drawn one are added (and animated);
+      // a reset (seq going backwards) redraws from scratch.
+      const fresh = newest < lastSeq ? timelineRows(state.timeline, ROWS) : timelineRows(state.timeline.filter((e) => e.seq > lastSeq), ROWS);
+      if (newest < lastSeq) timeline.replaceChildren();
+      const added = fresh.map(row);
+      timeline.prepend(...added);
+      while (timeline.childElementCount > ROWS) timeline.lastElementChild?.remove();
+      const motionApi = getMotion();
+      if (lastSeq >= 0 && newest > lastSeq && added.length <= 8) {
+        // New rows slide in under a brief accent wash; text stays at full contrast throughout.
+        motionApi?.animate(added, {
+          translateX: [-8, 0],
+          backgroundColor: ['rgba(76, 201, 240, 0.16)', 'rgba(76, 201, 240, 0)'],
+          duration: DURATION.state,
+          ease: EASE.enter,
+          delay: motionApi.stagger(STAGGER.row),
+          onComplete: () => clearInline(added, ['transform', 'background-color']),
+        });
+      }
       lastSeq = newest;
-      timeline.replaceChildren(
-        ...timelineRows(state.timeline, 40).map((e) => {
-          const li = el('li', `row sev-${e.severity}`);
-          li.append(el('span', 'row-time', formatClock(e.t)), el('span', 'row-icon', SEVERITY_ICON[e.severity]), el('span', 'row-source', e.source), el('span', 'row-message', e.message));
-          return li;
-        }),
-      );
     }
   });
 

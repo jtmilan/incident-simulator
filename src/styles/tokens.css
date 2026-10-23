@@ -36,7 +36,7 @@
   --space-12: 3rem;
   --space-16: 4rem;
 
-  /* Motion */
+  /* Motion (engine-driven motion uses src/motion/presets.ts) */
   --dur-hover: 150ms;
   --dur-panel: 280ms;
   --dur-shatter: 500ms;
