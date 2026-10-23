@@ -4,6 +4,7 @@ import '@fontsource/jetbrains-mono/latin-400.css';
 import './styles/tokens.css';
 import './styles/base.css';
 import './styles/hero.css';
+import './styles/console.css';
 
 import { isSoftwareRenderer, webglRendererName } from './app/gpu.ts';
 import { createLoop } from './app/loop.ts';
@@ -11,6 +12,7 @@ import { goatCounterCode, injectGoatCounter } from './config/analytics.ts';
 import { getBuildInfo } from './config/build-info.ts';
 import type { SceneHandle } from './scene/mount.ts';
 import { Simulation } from './sim/simulation.ts';
+import { mountConsole } from './ui/console.ts';
 import { mountHeadline } from './ui/headline.ts';
 import { ModeController, parseMode, type Mode } from './ui/modes.ts';
 import { mountStatusStrip } from './ui/status-strip.ts';
@@ -60,6 +62,16 @@ if (debug) (window as unknown as { __ccr?: { sim: Simulation } }).__ccr = { sim 
 
 const headline = document.querySelector<HTMLElement>('[data-headline]');
 if (headline) mountHeadline(headline);
+
+// ---- Console panels ----
+const region = (name: string) => document.querySelector<HTMLElement>(`[data-region="${name}"]`);
+const chaosRegion = region('chaos');
+const metricsRegion = region('metrics');
+const timelineRegion = region('timeline');
+const viewportRegion = region('viewport');
+if (chaosRegion && metricsRegion && timelineRegion && viewportRegion) {
+  mountConsole({ chaos: chaosRegion, metrics: metricsRegion, timeline: timelineRegion, viewport: viewportRegion }, { sim, loop });
+}
 
 // ---- Hero ⇄ console ----
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
