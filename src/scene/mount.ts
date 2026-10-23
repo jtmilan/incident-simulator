@@ -22,6 +22,9 @@ const nextIdle = () =>
 export interface SceneHandle {
   setFraming(framing: 'hero' | 'console', immediate?: boolean): void;
   setLabelsVisible(visible: boolean): void;
+  /** Scroll story progress (0..1) for the hero camera orbit. */
+  setScroll(progress: number): void;
+  readonly scroll: number;
   dispose(): void;
 }
 
@@ -76,6 +79,10 @@ export async function mountScene({ sim, loop }: { sim: Simulation; loop: Loop })
   return {
     setFraming: (framing, immediate) => scene.setFraming(framing, immediate),
     setLabelsVisible: (visible) => scene.setLabelsVisible(visible),
+    setScroll: (progress) => scene.setScroll(progress),
+    get scroll() {
+      return scene.scroll;
+    },
     dispose() {
       off();
       window.removeEventListener('resize', resize);

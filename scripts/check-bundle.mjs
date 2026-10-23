@@ -8,6 +8,7 @@ import { gzipSync } from 'node:zlib';
 
 const BUDGET_KB = 300;
 const ENTRY_BUDGET_KB = 25;
+const ENGINE_BUDGET_KB = 30;
 // A property only anime.js's engine has; it must never appear in the entry chunk.
 const ANIME_SIGNATURE = 'useDefaultMainLoop';
 const dir = 'dist/assets';
@@ -19,6 +20,10 @@ for (const file of files) {
   const kb = gzipSync(source).length / 1024;
   total += kb;
   console.log(`${file.padEnd(32)} ${kb.toFixed(1)} KB gz`);
+  if (file.startsWith('engine-') && kb > ENGINE_BUDGET_KB) {
+    console.error(`motion engine chunk ${file} is ${kb.toFixed(1)} KB gz (budget ${ENGINE_BUDGET_KB} KB)`);
+    failed = true;
+  }
   if (file.startsWith('index-') && kb > ENTRY_BUDGET_KB) {
     console.error(`entry chunk ${file} is ${kb.toFixed(1)} KB gz (budget ${ENTRY_BUDGET_KB} KB)`);
     failed = true;

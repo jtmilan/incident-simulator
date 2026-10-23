@@ -67,7 +67,10 @@ export function mountBootRing(host: HTMLElement, { sim, loop, reducedMotion }: {
     if (now - lastCheck < 500 || document.body.dataset.mode === 'console') return;
     lastCheck = now;
     const level = systemStatus(sim.state, sim.latest).level;
-    if (level !== lastLevel) wrap.dataset.level = lastLevel = level;
+    if (level === lastLevel) return;
+    // The ring's arcs and the infra section's replica field both show it.
+    wrap.dataset.level = lastLevel = level;
+    document.body.dataset.level = level;
   });
 
   const showStill = () => {

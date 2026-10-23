@@ -119,6 +119,8 @@ const enterButton = document.querySelector<HTMLButtonElement>('[data-enter]');
 const backButton = document.querySelector<HTMLButtonElement>('[data-back]');
 const consoleTourButton = document.querySelector<HTMLButtonElement>('[data-console-tour]');
 let scene: SceneHandle | null = null;
+/** Waiting for the (lazy) 3D scene: called once it mounts. */
+const sceneListeners = new Set<(scene: SceneHandle) => void>();
 // What happens once a user-initiated switch completes (with or without the iris): focus the
 // console, focus the hero, or start the guided tour.
 let pendingFocus: 'console' | 'hero' | 'tour' | null = null;
@@ -282,6 +284,8 @@ const loadScene = () =>
       .then((handle) => {
         scene = handle;
         syncScene(modes.mode, true);
+        if (handle) sceneListeners.forEach((fn) => fn(handle));
+        sceneListeners.clear();
       })
       // A failed chunk load (e.g. a stale tab after a redeploy) leaves the static layout in place.
       .catch((error: unknown) => console.warn('[scene] not loaded', error));
@@ -316,11 +320,25 @@ whenIdle(() => {
     .then(({ startMotion }) => {
       const api = startMotion({ loop, reducedMotion });
       provideMotion(api);
+      // The scroll story is its own lazy chunk too; it only decorates a page that is already complete.
+      import('./ui/story.ts')
+        .then(({ startStory }) =>
+          startStory(api, {
+            onScene: (fn) => {
+              if (scene) fn(scene);
+              else sceneListeners.add(fn);
+            },
+          }),
+        )
+        .catch((error: unknown) => console.warn('[story] not loaded', error));
       // A preference changed mid-visit applies at once: running animations jump to their end.
       window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (e) => api.registry.setReduced(e.matches));
     })
     .catch((error: unknown) => console.warn('[motion] not loaded', error));
 });
+
+// ?debug: the scene's scroll orbit, for the scroll-story tests.
+if (debug) (window as unknown as { __ccr: Record<string, unknown> }).__ccr.sceneScroll = () => scene?.scroll ?? null;
 
 // ?debug loads a plain-text simulator console below the hero. Code-split, so normal visitors never download it.
 if (debug) {

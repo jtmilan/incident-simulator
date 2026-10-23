@@ -181,14 +181,26 @@ h1 {
 
 /* Decorative (aria-hidden): the name set large, fading into the floor. */
 .wordmark {
+  --wordmark-fill: linear-gradient(180deg, var(--color-text) 10%, rgb(230 237 243 / 6%) 95%);
   font: 600 clamp(2rem, 10.2vw, 10rem) / 0.9 var(--font-sans);
   letter-spacing: -0.05em;
   white-space: nowrap;
-  background: linear-gradient(180deg, var(--color-text) 10%, rgb(230 237 243 / 6%) 95%);
+  background: var(--wordmark-fill);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
   user-select: none;
+}
+
+/* Split for its rise: each letter carries the fill, so a moving letter never leaves a ghost behind. */
+.wordmark.split {
+  background: none;
+}
+
+.wordmark.split .ch {
+  background: var(--wordmark-fill);
+  -webkit-background-clip: text;
+  background-clip: text;
 }
 
 .footer-meta {

@@ -1,5 +1,5 @@
-import { animate, createSpring, createTimeline, engine, stagger, utils } from 'animejs';
-import type { AnimationParams, JSAnimation, StaggerFunction, StaggerParams, TargetsParam, Timeline, TimelineParams } from 'animejs';
+import { animate, createSpring, createTimeline, engine, onScroll, stagger, utils } from 'animejs';
+import type { AnimationParams, JSAnimation, ScrollObserver, ScrollObserverParams, StaggerFunction, StaggerParams, TargetsParam, Timeline, TimelineParams } from 'animejs';
 import type { Loop } from '../app/loop.ts';
 import { motion } from '../app/motion.ts';
 import { PRESS_SPRING } from './presets.ts';
@@ -21,6 +21,8 @@ export interface MotionApi {
   press: ReturnType<typeof createSpring>;
   /** Sets properties immediately, with no animation. */
   set(targets: TargetsParam, props: AnimationParams): void;
+  /** A scroll observer; pass it as a timeline's `autoplay` to drive the timeline from scroll. */
+  scroll(params: ScrollObserverParams): ScrollObserver;
 }
 
 export function startMotion({ loop, reducedMotion }: { loop: Loop; reducedMotion: boolean }): MotionApi {
@@ -53,5 +55,6 @@ export function startMotion({ loop, reducedMotion }: { loop: Loop; reducedMotion
     stagger: (value, params) => (typeof value === 'number' ? stagger(value, params) : stagger(value, params)),
     press: createSpring(PRESS_SPRING),
     set: (targets, props) => void utils.set(targets, props),
+    scroll: (params) => onScroll(params),
   };
 }

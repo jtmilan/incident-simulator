@@ -43,6 +43,7 @@ import { DB_CENTRES, INGRESS, NODE_CENTRES, PENDING_AREA, PLATFORM_TOP, SlotBook
 import { heatColor, PALETTE } from './palette.ts';
 import { createParticles, particlePosition, stepParticles, type ParticleEnv } from './particles.ts';
 import type { Quality } from './quality.ts';
+import { orbitCamera } from './orbit.ts';
 
 export interface ClusterScene {
   update(dtMs: number, nowMs: number): void;
@@ -54,6 +55,10 @@ export interface ClusterScene {
   prewarm(): void;
   /** Hero framing keeps the cluster right of the copy; console framing centres it. */
   setFraming(framing: 'hero' | 'console', immediate?: boolean): void;
+  /** Scroll story progress (0..1): orbits the camera around the cluster in the hero framing. */
+  setScroll(progress: number): void;
+  /** Current (damped) scroll orbit, for tests. */
+  readonly scroll: number;
   setLabelsVisible(visible: boolean): void;
   dispose(): void;
 }
@@ -444,13 +449,16 @@ function buildScene(
       applyView();
     }
 
+    // Scroll orbit, damped like framing; it fades out as the console framing takes over.
+    if (Math.abs(scroll - scrollTarget) > 0.0005) scroll = MathUtils.damp(scroll, scrollTarget, 4, dt);
+
     // Slow ambient camera drift, off for reduced motion.
     const drift = quality.drift ? 1 : 0;
-    camera.position.set(
-      cameraBase.x + Math.sin(time * 0.07) * 0.8 * drift,
-      cameraBase.y + Math.sin(time * 0.05) * 0.25 * drift,
-      cameraBase.z,
-    );
+    driftBase.x = cameraBase.x + Math.sin(time * 0.07) * 0.8 * drift;
+    driftBase.y = cameraBase.y + Math.sin(time * 0.05) * 0.25 * drift;
+    driftBase.z = cameraBase.z;
+    orbitCamera(driftBase, lookAt, scroll * (1 - framing), orbited);
+    camera.position.set(orbited.x, orbited.y, orbited.z);
     camera.lookAt(lookAt);
     camera.updateMatrixWorld();
 
@@ -465,6 +473,10 @@ function buildScene(
 
   let framing = 0;
   let framingTarget = 0;
+  let scroll = 0;
+  let scrollTarget = 0;
+  const driftBase = { x: 0, y: 0, z: 0 };
+  const orbited = { x: 0, y: 0, z: 0 };
   let bloomEnabled = composer !== null;
   let particleLimit = particleCapacity;
   let size = { width: 1, height: 1 };
@@ -568,5 +580,23 @@ function buildScene(
     renderer.dispose();
   }
 
-  return { update, render, resize, degrade, prewarm, setFraming, setLabelsVisible: (visible: boolean) => labels.setVisible(visible), dispose };
+  // Reduced motion and the lightest tiers (no drift) keep the camera still.
+  const setScroll = (progress: number) => {
+    if (quality.drift) scrollTarget = Math.min(Math.max(progress, 0), 1);
+  };
+
+  return {
+    update,
+    render,
+    resize,
+    degrade,
+    prewarm,
+    setFraming,
+    setScroll,
+    get scroll() {
+      return scroll;
+    },
+    setLabelsVisible: (visible: boolean) => labels.setVisible(visible),
+    dispose,
+  };
 }

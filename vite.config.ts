@@ -66,7 +66,7 @@ export default defineConfig(({ mode }) => ({
     passWithNoTests: true,
     coverage: {
       provider: 'v8',
-      include: ['src/config/**/*.ts', 'src/sim/**/*.ts', 'src/app/loop.ts', 'src/app/gpu.ts', 'src/ui/modes.ts', 'src/ui/status-strip.ts', 'src/ui/view-models.ts', 'src/ui/real-config.ts', 'src/ui/tour-script.ts', 'src/ui/scenarios.ts', 'src/motion/registry.ts', 'src/motion/presets.ts', 'src/scene/{quality,layout,palette,particles}.ts'],
+      include: ['src/config/**/*.ts', 'src/sim/**/*.ts', 'src/app/loop.ts', 'src/app/gpu.ts', 'src/ui/modes.ts', 'src/ui/status-strip.ts', 'src/ui/view-models.ts', 'src/ui/real-config.ts', 'src/ui/tour-script.ts', 'src/ui/scenarios.ts', 'src/motion/registry.ts', 'src/motion/presets.ts', 'src/motion/scroll.ts', 'src/scene/orbit.ts', 'src/scene/{quality,layout,palette,particles}.ts'],
       exclude: ['src/**/*.test.ts'],
       reporter: ['text', 'lcov'],
       thresholds: { lines: 90 },
