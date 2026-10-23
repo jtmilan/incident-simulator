@@ -16,7 +16,8 @@
     "lint": "eslint .",
     "test": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "lhci": "npm ci --prefix tools/lighthouse --no-audit --no-fund && tools/lighthouse/node_modules/.bin/lhci autorun"
+    "lhci": "npm ci --prefix tools/lighthouse --no-audit --no-fund && tools/lighthouse/node_modules/.bin/lhci autorun",
+    "check:bundle": "node scripts/check-bundle.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",

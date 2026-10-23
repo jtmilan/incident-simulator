@@ -1,5 +1,6 @@
+import type { Loop } from '../app/loop.ts';
 import { BURN_RATE_PAGE, SLO_WINDOW_LABEL } from '../sim/config.ts';
-import { Simulation } from '../sim/simulation.ts';
+import type { Simulation } from '../sim/simulation.ts';
 import type { Command, SimState } from '../sim/types.ts';
 import './debug.css';
 
@@ -79,8 +80,7 @@ function summarize(state: Readonly<SimState>, sim: Simulation) {
   return { pods, metrics, slo, db, postmortem };
 }
 
-export function mountDebugView(host: HTMLElement): () => void {
-  const sim = new Simulation({ seed: 1 });
+export function mountDebugView(host: HTMLElement, { sim, loop }: { sim: Simulation; loop: Loop }): () => void {
   host.className = 'debug-view';
   host.dataset.testid = 'debug-view';
   host.append(el('h2', undefined, 'Simulator debug view'));
@@ -130,33 +130,17 @@ export function mountDebugView(host: HTMLElement): () => void {
     );
   };
 
-  let last = performance.now();
+  // Drawn from the page's shared clock; the simulator is advanced by its owner, not here.
   let lastRender = 0;
-  let frame = 0;
-  const loop = (now: number) => {
-    sim.advance(now - last);
-    last = now;
-    if (now - lastRender >= 250) {
-      render();
-      lastRender = now;
-    }
-    frame = requestAnimationFrame(loop);
-  };
-  const onVisibility = () => {
-    // Always cancel first so a tab that was hidden at mount can't end up with two loops.
-    cancelAnimationFrame(frame);
-    if (!document.hidden) {
-      last = performance.now();
-      frame = requestAnimationFrame(loop);
-    }
-  };
-  document.addEventListener('visibilitychange', onVisibility);
+  const off = loop.add((_dt, now) => {
+    if (now - lastRender < 250) return;
+    lastRender = now;
+    render();
+  });
   render();
-  frame = requestAnimationFrame(loop);
 
   return () => {
-    cancelAnimationFrame(frame);
-    document.removeEventListener('visibilitychange', onVisibility);
+    off();
     host.replaceChildren();
   };
 }

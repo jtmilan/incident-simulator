@@ -4,8 +4,10 @@ import '@fontsource/jetbrains-mono/latin-400.css';
 import './styles/tokens.css';
 import './styles/base.css';
 
+import { createLoop } from './app/loop.ts';
 import { goatCounterCode, injectGoatCounter } from './config/analytics.ts';
 import { getBuildInfo } from './config/build-info.ts';
+import { Simulation } from './sim/simulation.ts';
 
 function linkOrText(label: string, href: string | null, testId: string): HTMLElement {
   const el = document.createElement(href ? 'a' : 'span');
@@ -39,11 +41,30 @@ if (provenance) renderProvenance(provenance);
 const counter = goatCounterCode(import.meta.env);
 if (counter) injectGoatCounter(document, counter);
 
+// One simulator and one clock for everything on the page.
+const sim = new Simulation({ seed: 1 });
+const loop = createLoop();
+loop.add((dt) => sim.advance(dt));
+loop.start();
+
+const debug = new URLSearchParams(window.location.search).has('debug');
+if (debug) (window as unknown as { __ccr?: { sim: Simulation } }).__ccr = { sim };
+
+// The 3D scene loads after first paint so the hero text is never waiting on WebGL.
+const whenIdle = (fn: () => void): void => {
+  // Safari has no requestIdleCallback.
+  if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(fn, { timeout: 800 });
+  else setTimeout(fn, 200);
+};
+const loadScene = () => whenIdle(() => void import('./scene/mount.ts').then(({ mountScene }) => mountScene({ sim, loop })));
+if (document.readyState === 'complete') loadScene();
+else window.addEventListener('load', loadScene, { once: true });
+
 // ?debug loads a plain-text simulator console below the hero. Code-split, so normal visitors never download it.
-if (new URLSearchParams(window.location.search).has('debug')) {
+if (debug) {
   void import('./debug/debug-view.ts').then(({ mountDebugView }) => {
     const host = document.createElement('section');
     document.querySelector('main')?.append(host);
-    mountDebugView(host);
+    mountDebugView(host, { sim, loop });
   });
 }

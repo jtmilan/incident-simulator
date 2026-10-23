@@ -30,6 +30,7 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - run: npm run check:bundle
       - name: Audit shipped dependencies (blocking)
         run: npm audit --omit=dev --audit-level=high
       - name: Audit build tooling (reported, not blocking)

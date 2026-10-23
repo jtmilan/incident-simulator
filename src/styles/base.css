@@ -229,3 +229,27 @@ h1 {
   color: var(--color-ok);
   font-weight: 600;
 }
+
+/* ---- 3D scene (mounted after first paint) ---- */
+.scene {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* With the scene behind the page, the glow layer becomes a scrim that keeps text at AA contrast. */
+.has-scene .glow {
+  inset: 0;
+  animation: none;
+  background: linear-gradient(90deg, rgb(10 14 19 / 92%) 0%, rgb(10 14 19 / 62%) 42%, rgb(10 14 19 / 0%) 72%);
+  transform: none;
+}
+
+@media (max-width: 40rem) {
+  .has-scene .glow {
+    background: linear-gradient(180deg, rgb(10 14 19 / 88%) 0%, rgb(10 14 19 / 70%) 55%, rgb(10 14 19 / 35%) 100%);
+  }
+}
