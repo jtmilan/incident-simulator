@@ -110,6 +110,79 @@ export interface HpaState {
   scaleDownHoldUntil: number | null;
 }
 
+export interface SloState {
+  target: number;
+  windowMs: number;
+  budgetTotal: number;
+  budgetSpent: number;
+  /** 1 = untouched, 0 = exhausted; goes negative when overspent. */
+  budgetRemaining: number;
+  burnShort: number;
+  burnLong: number;
+  ring: { requests: number[]; errors: number[]; next: number };
+}
+
+export type AlertName = 'HighErrorBudgetBurn' | 'DBPrimaryDown' | 'PodNotReady';
+export type AlertSeverity = 'page' | 'ticket';
+export type AlertLifecycle = 'inactive' | 'pending' | 'firing';
+
+export interface AlertState {
+  name: AlertName;
+  severity: AlertSeverity;
+  state: AlertLifecycle;
+  summary: string;
+  pendingSince: number | null;
+  firedAt: number | null;
+  resolvedAt: number | null;
+}
+
+export type DbPhase = 'Healthy' | 'PrimaryDown' | 'Promoting' | 'Reconnecting';
+
+export interface DbInstance {
+  id: string;
+  zone: Zone;
+  role: 'primary' | 'replica';
+  up: boolean;
+}
+
+export interface DbState {
+  phase: DbPhase;
+  phaseSince: number;
+  phaseEndsAt: number;
+  instances: DbInstance[];
+  /** Share of write requests failing right now (0..1). */
+  writeFailureRatio: number;
+  replicationLagMs: number;
+  pool: { active: number; idle: number; max: number };
+  /** When the old primary comes back as a replica; null when nothing is rejoining. */
+  rejoinAt: number | null;
+}
+
+export interface Postmortem {
+  startedAt: number;
+  endedAt: number;
+  /** Start of impact to the first page firing; null when nothing paged (self-healed). */
+  timeToDetectMs: number | null;
+  timeToRecoverMs: number;
+  budgetBurned: number;
+  peakErrorRatio: number;
+  peakP99: number;
+  alertsFired: AlertName[];
+  chaos: ChaosKind[];
+}
+
+export interface IncidentState {
+  active: boolean;
+  startedAt: number;
+  firstPageAt: number | null;
+  budgetAtStart: number;
+  peakErrorRatio: number;
+  peakP99: number;
+  alertsFired: AlertName[];
+  chaos: ChaosKind[];
+  healthySince: number | null;
+}
+
 export interface SimState {
   /** Simulated milliseconds since the scenario started. */
   t: number;
@@ -122,6 +195,11 @@ export interface SimState {
   traffic: TrafficState;
   metrics: MetricsState;
   hpa: HpaState;
+  slo: SloState;
+  alerts: AlertState[];
+  db: DbState;
+  incident: IncidentState;
+  lastPostmortem: Postmortem | null;
   timeline: TimelineEvent[];
   counters: { pod: number; chaos: number; timeline: number };
 }
@@ -132,6 +210,8 @@ export type Command =
   | { type: 'killPod'; podId?: string }
   | { type: 'trafficSurge'; multiplier: number; durationMs: number }
   | { type: 'injectLatency'; ms: number; durationMs: number }
+  | { type: 'injectErrors'; ratio: number; durationMs: number }
+  | { type: 'failoverDatabase' }
   | { type: 'recoverAll' }
   | { type: 'reset'; seed?: number }
   | { type: 'setSpeed'; speed: Speed };
@@ -145,6 +225,10 @@ export type SimEvent =
   | { type: 'timelineEvent'; t: number; entry: TimelineEvent }
   | { type: 'metricsTick'; t: number; point: MetricsPoint }
   | { type: 'scaled'; t: number; from: number; to: number; utilization: number }
+  | { type: 'alertStateChanged'; t: number; name: AlertName; from: AlertLifecycle; to: AlertLifecycle; alert: AlertState }
+  | { type: 'dbStateChanged'; t: number; from: DbPhase; to: DbPhase; primary: string }
+  | { type: 'incidentOpened'; t: number }
+  | { type: 'postmortemReady'; t: number; postmortem: Postmortem }
   | { type: 'speedChanged'; t: number; speed: Speed }
   | { type: 'reset'; t: number; seed: number };
 

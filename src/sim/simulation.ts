@@ -1,8 +1,12 @@
+import { evaluateAlerts, initialAlerts } from './alerts.ts';
 import { createBus, type Bus } from './bus.ts';
 import { initialCluster, killPod, reconcileCluster } from './cluster.ts';
-import { MAX_CATCH_UP_MS, TICK_MS, TIMELINE_LIMIT } from './config.ts';
+import { MAX_CATCH_UP_MS, TICK_MS, TIMELINE_LIMIT, WRITE_FRACTION } from './config.ts';
+import { initialDatabase, reconcileDatabase, startFailover } from './database.ts';
 import { initialHpa, reconcileHpa } from './hpa.ts';
+import { initialIncident, trackIncident } from './incident.ts';
 import { createRng, type Rng } from './rng.ts';
+import { initialSlo, updateSlo } from './slo.ts';
 import { initialMetrics, initialTraffic, recordMetrics, stepTraffic } from './traffic.ts';
 import type { ChaosKind, ChaosRun, Command, MetricsPoint, SimEvent, SimState, Speed, TickContext, TimelineEvent } from './types.ts';
 
@@ -88,6 +92,11 @@ export class Simulation {
       traffic: initialTraffic(),
       metrics: initialMetrics(),
       hpa: initialHpa(),
+      slo: initialSlo(),
+      alerts: initialAlerts(),
+      db: initialDatabase(),
+      incident: initialIncident(),
+      lastPostmortem: null,
       timeline: [],
       counters: { pod: 0, chaos: 0, timeline: 0 },
     };
@@ -105,12 +114,24 @@ export class Simulation {
     }
 
     reconcileCluster(state, ctx);
-    const traffic = stepTraffic(state, ctx);
+    reconcileDatabase(state, ctx);
+    const traffic = stepTraffic(state, ctx, this.#injectedErrorRatio(ctx.t));
     recordMetrics(state, ctx, traffic);
+    updateSlo(state, traffic);
+    evaluateAlerts(state, ctx);
     // The HPA reads the last full metrics point, like a metrics-server scrape, not a single tick.
     reconcileHpa(state, ctx, this.latest?.cpu ?? traffic.cpu, traffic.readyPods);
+    trackIncident(state, ctx, traffic);
     this.#expireChaos(ctx);
     return this.#flush();
+  }
+
+  /** 5xx injection and failed writes during a DB failover, combined as independent failures. */
+  #injectedErrorRatio(t: number): number {
+    const injected = this.#state.chaos
+      .filter((run) => run.kind === 'injectErrors' && run.endsAt > t)
+      .reduce((ok, run) => ok * (1 - run.intensity), 1);
+    return 1 - injected * (1 - WRITE_FRACTION * this.#state.db.writeFailureRatio);
   }
 
   #context(): TickContext {
@@ -153,6 +174,13 @@ export class Simulation {
       case 'injectLatency':
         ctx.startChaos('injectLatency', { durationMs: command.durationMs, intensity: command.ms });
         ctx.log('chaos', 'warn', `Injected +${command.ms} ms latency for ${seconds(command.durationMs)}`);
+        return;
+      case 'injectErrors':
+        ctx.startChaos('injectErrors', { durationMs: command.durationMs, intensity: command.ratio });
+        ctx.log('chaos', 'warn', `Injected ${+(command.ratio * 100).toFixed(1)}% HTTP 5xx for ${seconds(command.durationMs)}`);
+        return;
+      case 'failoverDatabase':
+        if (startFailover(this.#state, ctx)) ctx.startChaos('failoverDatabase', { durationMs: 24_000 });
         return;
       case 'recoverAll': {
         const active = this.#state.chaos.filter((run) => run.endsAt > ctx.t);

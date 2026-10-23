@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { K8S_NAME_ALPHABET, TICK_MS } from './config.ts';
 import { initialCluster, killPod, reconcileCluster } from './cluster.ts';
+import { initialAlerts } from './alerts.ts';
+import { initialDatabase } from './database.ts';
 import { initialHpa } from './hpa.ts';
+import { initialIncident } from './incident.ts';
+import { initialSlo } from './slo.ts';
 import { createRng, type Rng } from './rng.ts';
 import { initialMetrics, initialTraffic } from './traffic.ts';
 import type { ChaosRun, SimEvent, SimState, TickContext, TimelineEvent } from './types.ts';
@@ -17,6 +21,11 @@ function harness(seed: number) {
     traffic: initialTraffic(),
     metrics: initialMetrics(),
     hpa: initialHpa(),
+    slo: initialSlo(),
+    alerts: initialAlerts(),
+    db: initialDatabase(),
+    incident: initialIncident(),
+    lastPostmortem: null,
     timeline: [],
     counters: { pod: 0, chaos: 0, timeline: 0 },
   };
