@@ -4,6 +4,13 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # typescript-eslint 8.x supports TypeScript < 6.1; revisit when it supports 7.x.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      # Types track the CI runtime (.nvmrc = Node 24 LTS).
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
     groups:
       minor-and-patch:
         update-types: [minor, patch]
