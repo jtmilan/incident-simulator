@@ -2,6 +2,7 @@ import { execSync } from 'node:child_process';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
 import { goatCounterCode } from './src/config/analytics.ts';
+import { getBuildInfo } from './src/config/build-info.ts';
 import { buildCsp, cspMetaTag } from './src/config/csp.ts';
 
 // Provenance is resolved once, at config time. CI passes the real values;
@@ -26,15 +27,20 @@ process.env.VITE_BUILD_TIME ??= new Date().toISOString();
 
 // GitHub Pages can't send response headers, so the CSP ships as a <meta> tag.
 // Build-only: the dev server injects styles from JS for HMR, which this policy would block.
-function cspPlugin(): Plugin {
+// The build-commit meta lets the post-deploy check confirm the CDN is serving this exact commit.
+function headMetaPlugin(): Plugin {
   return {
-    name: 'chaos-control-room:csp',
+    name: 'chaos-control-room:head-meta',
     apply: 'build',
     transformIndexHtml: {
       order: 'post',
       handler(html) {
         const policy = buildCsp({ goatCounterCode: goatCounterCode(process.env) });
-        return html.replace('<head>', `<head>\n    ${cspMetaTag(policy)}`);
+        const commit = getBuildInfo(process.env).sha;
+        return html.replace(
+          '<head>',
+          `<head>\n    ${cspMetaTag(policy)}\n    <meta name="build-commit" content="${commit}">`,
+        );
       },
     },
   };
@@ -42,7 +48,7 @@ function cspPlugin(): Plugin {
 
 export default defineConfig({
   base: '/chaos-control-room/',
-  plugins: [cspPlugin()],
+  plugins: [headMetaPlugin()],
   build: {
     target: 'es2022',
     sourcemap: true,

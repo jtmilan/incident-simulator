@@ -1,0 +1,103 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; never cancel a deploy that is already publishing.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build with provenance
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Build
+        run: |
+          VITE_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" npm run build
+        env:
+          VITE_COMMIT_SHA: ${{ github.sha }}
+          VITE_RUN_ID: ${{ github.run_id }}
+          VITE_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          VITE_GOATCOUNTER_CODE: ${{ vars.VITE_GOATCOUNTER_CODE }}
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  live-smoke:
+    name: Live smoke (proves the deployed commit)
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+      EXPECTED_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Wait for the CDN to serve this commit
+        run: |
+          for attempt in $(seq 1 36); do
+            served="$(curl -fsS "${PAGE_URL}?v=${EXPECTED_SHA}" | sed -n 's/.*name="build-commit" content="\([0-9a-f]*\)".*/\1/p' || true)"
+            if [ "$served" = "$EXPECTED_SHA" ]; then
+              echo "Live site is serving ${EXPECTED_SHA} (attempt ${attempt})"
+              exit 0
+            fi
+            echo "Attempt ${attempt}: serving '${served:-nothing}', waiting..."
+            sleep 5
+          done
+          echo "::error::Live site never served ${EXPECTED_SHA}"
+          exit 1
+      - name: Smoke test the live site
+        run: npm run test:e2e
+        env:
+          BASE_URL: ${{ env.PAGE_URL }}
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: live-smoke-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

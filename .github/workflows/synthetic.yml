@@ -1,0 +1,48 @@
+name: Synthetic check
+
+# GitHub disables scheduled workflows after 60 days without repository activity.
+# Re-enable from the Actions tab (or `gh workflow enable synthetic.yml`) if that happens.
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: synthetic
+  cancel-in-progress: true
+
+jobs:
+  live:
+    name: Live site smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BASE_URL: https://jtmilan.github.io/chaos-control-room/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - name: Open or update the incident issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create synthetic-failure --color FF4D5E --description "Live site synthetic check failed" --force
+          open_issue="$(gh issue list --label synthetic-failure --state open --json number --jq '.[0].number')"
+          if [ -n "$open_issue" ]; then
+            gh issue comment "$open_issue" --body "Still failing: ${RUN_URL}"
+          else
+            gh issue create --label synthetic-failure \
+              --title "Synthetic check failing for ${BASE_URL}" \
+              --body "The scheduled smoke test against ${BASE_URL} failed: ${RUN_URL}"
+          fi
