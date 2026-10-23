@@ -46,7 +46,7 @@ export interface Effects {
 }
 
 export function createEffects(scene: Scene, enabled: boolean): Effects {
-  const shardGeometry = new TetrahedronGeometry(0.15);
+  const shardGeometry = new TetrahedronGeometry(0.22);
   const shardMaterial = new MeshBasicMaterial({ toneMapped: false });
   const shardMesh = new InstancedMesh(shardGeometry, shardMaterial, MAX_SHARDS);
   shardMesh.instanceMatrix.setUsage(DynamicDrawUsage);
@@ -65,7 +65,7 @@ export function createEffects(scene: Scene, enabled: boolean): Effects {
   const flashes: Flash[] = Array.from({ length: MAX_FLASHES }, () => {
     const mesh = new Mesh(
       ringGeometry,
-      new MeshBasicMaterial({ color: new Color(PALETTE.ok).multiplyScalar(2), transparent: true, toneMapped: false, opacity: 0 }),
+      new MeshBasicMaterial({ color: new Color(PALETTE.ok).multiplyScalar(2.6), transparent: true, toneMapped: false, opacity: 0 }),
     );
     mesh.rotation.x = Math.PI / 2;
     mesh.visible = false;
@@ -75,6 +75,8 @@ export function createEffects(scene: Scene, enabled: boolean): Effects {
 
   const dummy = new Object3D();
   const tint = new Color();
+  // Shards start hot (critical red) and cool to the pod's own colour as they fall.
+  const hot = new Color(PALETTE.crit).multiplyScalar(1.6);
   let burst = 0;
 
   return {
@@ -126,7 +128,7 @@ export function createEffects(scene: Scene, enabled: boolean): Effects {
         dummy.scale.setScalar(Math.max(1 - ease, 0.001));
         dummy.updateMatrix();
         shardMesh.setMatrixAt(i, dummy.matrix);
-        shardMesh.setColorAt(i, tint.copy(shard.color).multiplyScalar(1 - ease * 0.8));
+        shardMesh.setColorAt(i, tint.copy(hot).lerp(shard.color, Math.min(k * 2, 1)).multiplyScalar(1 - ease * 0.7));
         i++;
       }
       shardMesh.count = i;
@@ -148,6 +150,8 @@ export function createEffects(scene: Scene, enabled: boolean): Effects {
     },
 
     dispose() {
+      scene.remove(shardMesh, ...flashes.map((f) => f.mesh));
+      shardMesh.dispose();
       shardGeometry.dispose();
       shardMaterial.dispose();
       ringGeometry.dispose();

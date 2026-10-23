@@ -43,16 +43,24 @@ export interface SlotAssignment {
  */
 export class SlotBook {
   #slots = new Map<string, SlotAssignment>();
+  // Reused every call: this runs once per animation frame.
+  #alive = new Set<string>();
 
   assign(pods: readonly { id: string; nodeId: string | null }[]): ReadonlyMap<string, SlotAssignment> {
-    const alive = new Set(pods.map((p) => p.id));
-    for (const id of [...this.#slots.keys()]) if (!alive.has(id)) this.#slots.delete(id);
+    this.#alive.clear();
+    for (const pod of pods) this.#alive.add(pod.id);
+    for (const id of this.#slots.keys()) if (!this.#alive.has(id)) this.#slots.delete(id);
 
     for (const pod of pods) {
       if (pod.nodeId === null || this.#slots.has(pod.id)) continue;
-      const taken = new Set([...this.#slots.values()].filter((s) => s.nodeId === pod.nodeId).map((s) => s.slot));
-      const free = SLOT_OFFSETS.findIndex((_, i) => !taken.has(i));
-      if (free >= 0) this.#slots.set(pod.id, { nodeId: pod.nodeId, slot: free });
+      let taken = 0; // bitmask of occupied slots on this pod's node
+      for (const s of this.#slots.values()) if (s.nodeId === pod.nodeId) taken |= 1 << s.slot;
+      for (let slot = 0; slot < SLOT_OFFSETS.length; slot++) {
+        if ((taken & (1 << slot)) === 0) {
+          this.#slots.set(pod.id, { nodeId: pod.nodeId, slot });
+          break;
+        }
+      }
     }
     return this.#slots;
   }

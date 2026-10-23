@@ -11,6 +11,7 @@ function fakeDeps() {
     removeEventListener: (_type: string, fn: () => void) => listeners.delete(fn),
   };
   let clock = 0;
+  const errors: unknown[] = [];
   const deps: LoopDeps = {
     now: () => clock,
     raf: (cb) => {
@@ -20,9 +21,11 @@ function fakeDeps() {
     },
     caf: (id) => pending.delete(id),
     doc: doc as unknown as LoopDeps['doc'],
+    onError: (error) => errors.push(error),
   };
   return {
     deps,
+    errors,
     pendingCount: () => pending.size,
     /** Fire every pending frame at time t. */
     frame(t: number) {
@@ -82,6 +85,22 @@ describe('createLoop', () => {
     f.setHidden(true);
     f.setHidden(false);
     expect(f.pendingCount()).toBe(0);
+  });
+
+  it('keeps ticking when a subscriber throws, and reports the error', () => {
+    const f = fakeDeps();
+    const loop = createLoop(f.deps);
+    const ticks: number[] = [];
+    loop.add(() => {
+      throw new Error('scene blew up');
+    });
+    loop.add((dt) => ticks.push(dt));
+    loop.start();
+    f.frame(16);
+    f.frame(32);
+    expect(ticks).toEqual([16, 16]);
+    expect(f.errors).toHaveLength(2);
+    expect(f.pendingCount()).toBe(1);
   });
 
   it('does not start a frame when started in a hidden tab', () => {

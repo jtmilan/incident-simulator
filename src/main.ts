@@ -45,7 +45,7 @@ if (counter) injectGoatCounter(document, counter);
 const sim = new Simulation({ seed: 1 });
 const loop = createLoop();
 loop.add((dt) => sim.advance(dt));
-loop.start();
+// The clock runs only once something shows the simulation (the scene, or the ?debug console).
 
 const debug = new URLSearchParams(window.location.search).has('debug');
 if (debug) (window as unknown as { __ccr?: { sim: Simulation } }).__ccr = { sim };
@@ -56,15 +56,26 @@ const whenIdle = (fn: () => void): void => {
   if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(fn, { timeout: 800 });
   else setTimeout(fn, 200);
 };
-const loadScene = () => whenIdle(() => void import('./scene/mount.ts').then(({ mountScene }) => mountScene({ sim, loop })));
+const loadScene = () =>
+  whenIdle(() => {
+    import('./scene/mount.ts')
+      .then(({ mountScene }) => {
+        if (mountScene({ sim, loop })) loop.start();
+      })
+      // A failed chunk load (e.g. a stale tab after a redeploy) leaves the static layout in place.
+      .catch((error: unknown) => console.warn('[scene] not loaded', error));
+  });
 if (document.readyState === 'complete') loadScene();
 else window.addEventListener('load', loadScene, { once: true });
 
 // ?debug loads a plain-text simulator console below the hero. Code-split, so normal visitors never download it.
 if (debug) {
-  void import('./debug/debug-view.ts').then(({ mountDebugView }) => {
-    const host = document.createElement('section');
-    document.querySelector('main')?.append(host);
-    mountDebugView(host, { sim, loop });
-  });
+  import('./debug/debug-view.ts')
+    .then(({ mountDebugView }) => {
+      const host = document.createElement('section');
+      document.querySelector('main')?.append(host);
+      mountDebugView(host, { sim, loop });
+      loop.start();
+    })
+    .catch((error: unknown) => console.warn('[debug] not loaded', error));
 }

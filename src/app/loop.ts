@@ -5,6 +5,7 @@ export interface LoopDeps {
   raf(callback: (t: number) => void): number;
   caf(id: number): void;
   doc: Pick<Document, 'hidden' | 'addEventListener' | 'removeEventListener'>;
+  onError(error: unknown): void;
 }
 
 export interface Loop {
@@ -22,6 +23,7 @@ const browserDeps = (): LoopDeps => ({
   raf: (callback) => requestAnimationFrame(callback),
   caf: (id) => cancelAnimationFrame(id),
   doc: document,
+  onError: (error) => console.error('[loop] frame subscriber failed', error),
 });
 
 /**
@@ -37,8 +39,15 @@ export function createLoop(deps: LoopDeps = browserDeps()): Loop {
   const frame = (t: number) => {
     const dt = Math.min(Math.max(t - last, 0), MAX_FRAME_MS);
     last = t;
-    subscribers.forEach((fn) => fn(dt, t));
+    // Book the next frame first: a subscriber that throws must never stop the page's only clock.
     id = deps.raf(frame);
+    subscribers.forEach((fn) => {
+      try {
+        fn(dt, t);
+      } catch (error) {
+        deps.onError(error);
+      }
+    });
   };
 
   const halt = () => {

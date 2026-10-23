@@ -39,7 +39,7 @@ import type { Pod } from '../sim/types.ts';
 import { createEffects } from './effects.ts';
 import { DB_CENTRES, INGRESS, NODE_CENTRES, PENDING_AREA, PLATFORM_TOP, SlotBook, slotPosition, type Vec3 } from './layout.ts';
 import { heatColor, PALETTE } from './palette.ts';
-import { createParticles, particlePosition, stepParticles } from './particles.ts';
+import { createParticles, particlePosition, stepParticles, type ParticleEnv } from './particles.ts';
 import type { Quality } from './quality.ts';
 
 export interface ClusterScene {
@@ -58,7 +58,7 @@ const STATUS_LOOK: Record<Pod['status'], { scale: number; brightness: number }> 
   Pending: { scale: 0.45, brightness: 0.25 },
   ContainerCreating: { scale: 0.7, brightness: 0.4 },
   Running: { scale: 0.9, brightness: 0.75 },
-  Ready: { scale: 1, brightness: 1.45 },
+  Ready: { scale: 1, brightness: 1.2 },
   Terminating: { scale: 0, brightness: 0.2 },
 };
 
@@ -110,6 +110,23 @@ const GRID_FRAGMENT = /* glsl */ `
 
 export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, quality: Quality): ClusterScene {
   const renderer = new WebGLRenderer({ canvas, antialias: quality.antialias, powerPreference: 'high-performance' });
+  const disposables: { dispose(): void }[] = [];
+  try {
+    return buildScene(renderer, disposables, sim, quality);
+  } catch (error) {
+    // Half-built: free what exists so a failed mount never holds on to a GL context.
+    disposables.forEach((d) => d.dispose());
+    renderer.dispose();
+    throw error;
+  }
+}
+
+function buildScene(
+  renderer: WebGLRenderer,
+  disposables: { dispose(): void }[],
+  sim: Simulation,
+  quality: Quality,
+): ClusterScene {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.dprCap));
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = ACESFilmicToneMapping;
@@ -129,7 +146,6 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
   key.position.set(6, 10, 8);
   scene.add(rim, key);
 
-  const disposables: { dispose(): void }[] = [];
   const track = <T extends { dispose(): void }>(x: T): T => {
     disposables.push(x);
     return x;
@@ -160,12 +176,18 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
   for (const [nodeId, centre] of Object.entries(NODE_CENTRES)) {
     const platform = new Mesh(platformGeometry, platformMaterial);
     platform.position.set(centre.x, PLATFORM_TOP / 2, centre.z);
-    const edgeMaterial = track(new LineBasicMaterial({ color: new Color(PALETTE.accent).multiplyScalar(1.3), transparent: true, opacity: 0.55 }));
+    const edgeMaterial = track(new LineBasicMaterial({ color: new Color(PALETTE.accent).multiplyScalar(1.3), transparent: true, opacity: 0.45 }));
     const edge = new LineSegments(edgeGeometry, edgeMaterial);
     edge.position.set(centre.x, PLATFORM_TOP + 0.005, centre.z);
     edgeMaterials.set(nodeId, edgeMaterial);
     scene.add(platform, edge);
   }
+
+  // Ingress gateway: where every request (particle) enters the scene.
+  const gateMaterial = track(new MeshBasicMaterial({ color: new Color(PALETTE.accent).multiplyScalar(1.5), toneMapped: false, transparent: true, opacity: 0.85 }));
+  const gate = new Mesh(track(new TorusGeometry(1.2, 0.05, 10, 64, Math.PI)), gateMaterial);
+  gate.position.set(INGRESS.x, 0, INGRESS.z);
+  scene.add(gate);
 
   // Database: a platform with two stacked-cylinder instances and a ring over the primary.
   const dbPlatform = new Mesh(track(new RoundedBoxGeometry(8.4, 0.3, 3.4, 4, 0.1)), platformMaterial);
@@ -221,6 +243,8 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
   particleMesh.count = 0;
   scene.add(particleMesh);
   const okParticle = new Color(PALETTE.accent).multiplyScalar(1.9);
+  const slowParticle = new Color(PALETTE.warn).multiplyScalar(1.7);
+  const particleTint = new Color();
   const errorParticle = new Color(PALETTE.crit).multiplyScalar(1.35);
   const at: Vec3 = { x: 0, y: 0, z: 0 };
 
@@ -234,13 +258,31 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
   const scratch = new Color();
   let seedCounter = 0;
 
-  const targetFor = (pod: Pod, assignment: ReturnType<SlotBook['assign']>, index: number) => {
+  // Scratch objects reused every frame so the hot path doesn't feed the garbage collector.
+  const target = new Vector3();
+  const live = new Set<string>();
+  const readyTargets: Vec3[] = Array.from({ length: MAX_PODS }, () => ({ x: 0, y: 0, z: 0 }));
+  const dbPoints = Object.fromEntries(Object.entries(DB_CENTRES).map(([id, c]) => [id, { x: c.x, y: 1.3, z: c.z }]));
+  const particleEnv: ParticleEnv = {
+    rps: 400,
+    p99: 140,
+    errorRatio: 0,
+    writeFailureRatio: 0,
+    readyTargets: [],
+    ingress: INGRESS,
+    primary: dbPoints['db-1']!,
+    replica: dbPoints['db-2']!,
+  };
+  // Ready transitions that arrive before the pod has a visual (created and Ready within one step).
+  const pendingPops = new Set<string>();
+
+  const targetFor = (pod: Pod, assignment: ReturnType<SlotBook['assign']>, pendingIndex: number, out: Vector3) => {
     const slot = assignment.get(pod.id);
     if (slot) {
       const p = slotPosition(slot);
-      return new Vector3(p.x, p.y + 0.55, p.z);
+      return out.set(p.x, p.y + 0.55, p.z);
     }
-    return new Vector3(PENDING_AREA.x + (index - 1) * 0.9, PENDING_AREA.y, PENDING_AREA.z);
+    return out.set(PENDING_AREA.x + (pendingIndex - 0.5) * 0.9, PENDING_AREA.y, PENDING_AREA.z);
   };
 
   function update(dtMs: number, nowMs: number) {
@@ -251,14 +293,19 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
     const time = nowMs / 1_000;
 
     // Bring visuals in line with the simulator.
-    const live = new Set<string>();
-    state.pods.forEach((pod, index) => {
+    live.clear();
+    let pendingIndex = 0;
+    for (const pod of state.pods) {
       live.add(pod.id);
-      const target = targetFor(pod, assignment, index);
+      targetFor(pod, assignment, pod.nodeId === null ? pendingIndex++ : 0, target);
       let visual = visuals.get(pod.id);
       if (!visual) {
         visual = { position: target.clone(), scale: 0, color: new Color(PALETTE.muted), seed: seedCounter++ * 1.618, gone: false, popAge: null };
         visuals.set(pod.id, visual);
+        if (pendingPops.delete(pod.id)) {
+          visual.popAge = quality.drift ? 0 : null;
+          effects.flash(visual.position);
+        }
       }
       const look = STATUS_LOOK[pod.status];
       visual.position.x = MathUtils.damp(visual.position.x, target.x, DAMP, dt);
@@ -269,7 +316,7 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
       const heat = pod.status === 'Ready' ? heatColor(cpu) : pod.status === 'Pending' ? { r: 0.5, g: 0.55, b: 0.6 } : heatColor(0.45);
       scratch.setRGB(heat.r * look.brightness, heat.g * look.brightness, heat.b * look.brightness, SRGBColorSpace);
       visual.color.lerp(scratch, 1 - Math.exp(-DAMP * dt));
-    });
+    }
     // Deleted pods shrink away from where they stood.
     for (const [id, visual] of visuals) {
       if (live.has(id)) continue;
@@ -299,7 +346,7 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
     for (const node of state.nodes) {
       const material = edgeMaterials.get(node.id);
       if (!material) continue;
-      material.opacity = MathUtils.damp(material.opacity, node.ready ? 0.55 + (paging ? 0.35 * pulse : 0) : 0.12, DAMP, dt);
+      material.opacity = MathUtils.damp(material.opacity, node.ready ? 0.45 + (paging ? 0.45 * pulse : 0) : 0.12, DAMP, dt);
       scratch.copy(paging ? edgeAlert : edgeIdle);
       material.color.lerp(scratch, 1 - Math.exp(-DAMP * dt));
     }
@@ -307,28 +354,28 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
     // Traffic: density from rps, speed from p99, red for errors, DB legs follow the primary.
     if (particleCapacity > 0) {
       const last = state.traffic.last;
-      const readyTargets: Vec3[] = [];
+      let ready = 0;
       for (const pod of state.pods) {
         const v = visuals.get(pod.id);
-        if (pod.status === 'Ready' && v) readyTargets.push({ x: v.position.x, y: v.position.y, z: v.position.z });
+        if (pod.status !== 'Ready' || !v || ready >= readyTargets.length) continue;
+        const slot = readyTargets[ready++]!;
+        slot.x = v.position.x;
+        slot.y = v.position.y;
+        slot.z = v.position.z;
       }
-      const primaryInstance = state.db.instances.find((x) => x.role === 'primary');
-      const replicaInstance = state.db.instances.find((x) => x.role === 'replica');
-      const dbPoint = (id: string | undefined) => {
-        const c = (id && DB_CENTRES[id]) || DB_CENTRES['db-1']!;
-        return { x: c.x, y: 1.3, z: c.z };
-      };
-      stepParticles(particleModel, dt, {
-        rps: sim.latest?.rps ?? last?.rps ?? 400,
-        p99: last?.p99 ?? 140,
-        errorRatio: last?.errorRatio ?? 0,
-        writeFailureRatio: state.db.writeFailureRatio,
-        readyTargets,
-        ingress: INGRESS,
-        primary: dbPoint(primaryInstance?.id),
-        replica: dbPoint(replicaInstance?.id),
-      });
+      const primaryId = state.db.instances.find((x) => x.role === 'primary')?.id ?? 'db-1';
+      const replicaId = state.db.instances.find((x) => x.role === 'replica')?.id ?? 'db-2';
+      particleEnv.rps = sim.latest?.rps ?? last?.rps ?? 400;
+      particleEnv.p99 = last?.p99 ?? 140;
+      particleEnv.errorRatio = last?.errorRatio ?? 0;
+      particleEnv.writeFailureRatio = state.db.writeFailureRatio;
+      particleEnv.readyTargets = readyTargets.slice(0, ready);
+      particleEnv.primary = dbPoints[primaryId]!;
+      particleEnv.replica = dbPoints[replicaId]!;
+      stepParticles(particleModel, dt, particleEnv);
       const bunching = Math.min(Math.max(((last?.p99 ?? 140) - 250) / 700, 0), 0.6);
+      // Latency is encoded in colour too, so it never reads as a traffic surge: cyan → amber past 300 ms p99.
+      particleTint.copy(okParticle).lerp(slowParticle, Math.min(Math.max(((last?.p99 ?? 140) - 300) / 300, 0), 1));
       let n = 0;
       for (const particle of particleModel.particles) {
         if (!particle.alive) continue;
@@ -338,7 +385,7 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
         dummy.scale.setScalar(particle.leg === 'bounce' || particle.leg === 'fizzle' ? 1 - particle.t * 0.6 : 1);
         dummy.updateMatrix();
         particleMesh.setMatrixAt(n, dummy.matrix);
-        particleMesh.setColorAt(n, particle.error ? errorParticle : okParticle);
+        particleMesh.setColorAt(n, particle.error ? errorParticle : particleTint);
         n++;
       }
       particleMesh.count = n;
@@ -393,8 +440,11 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
     renderer.setSize(width, height, false);
     if (composer && bloom) {
       composer.setSize(width, height);
-      const scale = quality.bloom === 'half' ? 0.5 : 1;
-      bloom.resolution.set(width * scale, height * scale);
+      // composer.setSize sizes bloom at full resolution × DPR; the 'half' tier shrinks it afterwards.
+      if (quality.bloom === 'half') {
+        const dpr = renderer.getPixelRatio();
+        bloom.setSize(width * dpr * 0.5, height * dpr * 0.5);
+      }
     }
   }
 
@@ -410,7 +460,10 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
     sim.bus.on('podPhaseChanged', (e) => {
       if (e.to !== 'Ready') return;
       const visual = visuals.get(e.podId);
-      if (!visual) return;
+      if (!visual) {
+        pendingPops.add(e.podId); // the pod got its visual and Ready inside one step: pop it on creation
+        return;
+      }
       visual.popAge = quality.drift ? 0 : null;
       effects.flash(visual.position.clone());
     }),
@@ -419,6 +472,9 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
   function dispose() {
     unsubscribe.forEach((off) => off());
     effects.dispose();
+    pods.dispose();
+    particleMesh.dispose();
+    bloom?.dispose();
     disposables.forEach((d) => d.dispose());
     composer?.dispose();
     renderer.dispose();
