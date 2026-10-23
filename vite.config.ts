@@ -1,22 +1,27 @@
 import { execSync } from 'node:child_process';
-import type { Plugin } from 'vite';
+import { loadEnv, type Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
 import { goatCounterCode } from './src/config/analytics.ts';
 import { getBuildInfo } from './src/config/build-info.ts';
 import { buildCsp, cspMetaTag } from './src/config/csp.ts';
 
-// Provenance is resolved once, at config time. CI passes the real values;
-// a local build falls back to the checked-out commit so the footer still means something.
+function git(args: string): string {
+  return execSync(`git ${args}`, {
+    stdio: ['ignore', 'pipe', 'ignore'],
+    env: { PATH: process.env.PATH ?? '' },
+    timeout: 5_000,
+  })
+    .toString()
+    .trim();
+}
+
+// Provenance is resolved once, at config time. CI passes the real values. A local build
+// names the checked-out commit only when the tree is clean; uncommitted changes are "dev",
+// because no commit actually contains that code.
 function resolveCommitSha(): string {
   if (process.env.VITE_COMMIT_SHA) return process.env.VITE_COMMIT_SHA;
   try {
-    return execSync('git rev-parse HEAD', {
-      stdio: ['ignore', 'pipe', 'ignore'],
-      env: { PATH: process.env.PATH ?? '' },
-      timeout: 5_000,
-    })
-      .toString()
-      .trim();
+    return git('status --porcelain') === '' ? git('rev-parse HEAD') : 'dev';
   } catch {
     return 'dev';
   }
@@ -28,15 +33,17 @@ process.env.VITE_BUILD_TIME ??= new Date().toISOString();
 // GitHub Pages can't send response headers, so the CSP ships as a <meta> tag.
 // Build-only: the dev server injects styles from JS for HMR, which this policy would block.
 // The build-commit meta lets the post-deploy check confirm the CDN is serving this exact commit.
-function headMetaPlugin(): Plugin {
+// `env` is the same VITE_* set the bundle sees (.env files + process.env), so the policy and
+// the analytics injection can never disagree.
+function headMetaPlugin(env: Record<string, string>): Plugin {
   return {
     name: 'chaos-control-room:head-meta',
     apply: 'build',
     transformIndexHtml: {
       order: 'post',
       handler(html) {
-        const policy = buildCsp({ goatCounterCode: goatCounterCode(process.env) });
-        const commit = getBuildInfo(process.env).sha;
+        const policy = buildCsp({ goatCounterCode: goatCounterCode(env) });
+        const commit = getBuildInfo(env).sha;
         return html.replace(
           '<head>',
           `<head>\n    ${cspMetaTag(policy)}\n    <meta name="build-commit" content="${commit}">`,
@@ -46,9 +53,9 @@ function headMetaPlugin(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: '/chaos-control-room/',
-  plugins: [headMetaPlugin()],
+  plugins: [headMetaPlugin(loadEnv(mode, process.cwd(), 'VITE_'))],
   build: {
     target: 'es2022',
     sourcemap: true,
@@ -65,4 +72,4 @@ export default defineConfig({
       thresholds: { lines: 90 },
     },
   },
-});
+}));

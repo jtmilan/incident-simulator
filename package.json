@@ -10,13 +10,13 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "npm run typecheck && vite build",
+    "build": "vite build",
     "preview": "vite preview --port 4173 --strictPort",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "lint": "eslint .",
     "test": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "lhci": "npx --yes @lhci/cli@0.15.1 autorun"
+    "lhci": "npm ci --prefix tools/lighthouse --no-audit --no-fund && tools/lighthouse/node_modules/.bin/lhci autorun"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",

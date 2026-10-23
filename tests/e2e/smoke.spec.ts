@@ -7,10 +7,22 @@ import { expect, test, type Page } from '@playwright/test';
 const expectedSha = process.env.EXPECTED_SHA?.trim().toLowerCase();
 const entry = expectedSha ? `./?v=${expectedSha}` : './';
 
+// An outage at the analytics provider must not fail the site's own health check.
+// CSP violations are still caught: the browser reports those against the page, not the third party.
+const THIRD_PARTY_HOSTS = /(^|\.)(gc\.zgo\.at|goatcounter\.com)$/;
+
+function isThirdParty(url: string): boolean {
+  try {
+    return THIRD_PARTY_HOSTS.test(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
 function collectErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on('console', (msg) => {
-    if (msg.type() === 'error') errors.push(msg.text());
+    if (msg.type() === 'error' && !isThirdParty(msg.location().url)) errors.push(msg.text());
   });
   page.on('pageerror', (err) => errors.push(err.message));
   return errors;

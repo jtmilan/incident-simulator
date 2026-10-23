@@ -24,6 +24,8 @@ jobs:
       BASE_URL: https://jtmilan.github.io/chaos-control-room/
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
@@ -35,6 +37,7 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           gh label create synthetic-failure --color FF4D5E --description "Live site synthetic check failed" --force
@@ -46,3 +49,13 @@ jobs:
               --title "Synthetic check failing for ${BASE_URL}" \
               --body "The scheduled smoke test against ${BASE_URL} failed: ${RUN_URL}"
           fi
+      - name: Close the incident issue on recovery
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          for issue in $(gh issue list --label synthetic-failure --state open --json number --jq '.[].number'); do
+            gh issue close "$issue" --comment "Recovered: ${RUN_URL}"
+          done

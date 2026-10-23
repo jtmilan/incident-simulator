@@ -1,0 +1,8 @@
+{
+  "name": "chaos-control-room-lighthouse",
+  "private": true,
+  "description": "Lighthouse CI, kept in its own lockfile so its build-machine-only dependency tree stays pinned without touching the app's audit surface.",
+  "devDependencies": {
+    "@lhci/cli": "0.15.1"
+  }
+}

@@ -45,6 +45,9 @@ describe('goatCounterCode', () => {
     expect(goatCounterCode({ VITE_GOATCOUNTER_CODE: 'evil.com/x' })).toBeNull();
     expect(goatCounterCode({ VITE_GOATCOUNTER_CODE: 'UPPER' })).toBeNull();
     expect(goatCounterCode({ VITE_GOATCOUNTER_CODE: 'a'.repeat(64) })).toBeNull();
+    expect(goatCounterCode({ VITE_GOATCOUNTER_CODE: '-jtmilan' })).toBeNull();
+    expect(goatCounterCode({ VITE_GOATCOUNTER_CODE: 'jtmilan-' })).toBeNull();
+    expect(goatCounterCode({ VITE_GOATCOUNTER_CODE: 'a' })).toBe('a');
   });
 });
 

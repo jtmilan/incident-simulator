@@ -4,9 +4,9 @@ export interface AnalyticsEnv {
 
 export const GOATCOUNTER_SCRIPT_SRC = 'https://gc.zgo.at/count.js';
 
-// GoatCounter site codes become a subdomain, so the same pattern also keeps
-// the CSP host exact (see csp.ts).
-export const GOATCOUNTER_CODE_PATTERN = /^[a-z0-9-]{1,63}$/;
+// GoatCounter site codes become a subdomain, so this is a DNS label: 1–63 chars, no leading or
+// trailing hyphen. The same pattern keeps the CSP host exact (see csp.ts).
+export const GOATCOUNTER_CODE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 export function goatCounterCode(env: AnalyticsEnv): string | null {
   const code = env.VITE_GOATCOUNTER_CODE?.trim() ?? '';
