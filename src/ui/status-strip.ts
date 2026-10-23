@@ -1,4 +1,5 @@
 import type { Loop } from '../app/loop.ts';
+import { HEALTHY_ERROR_RATIO, HEALTHY_P99_MS } from '../sim/config.ts';
 import type { Simulation } from '../sim/simulation.ts';
 import type { MetricsPoint, SimState } from '../sim/types.ts';
 
@@ -20,7 +21,7 @@ export function systemStatus(state: Readonly<SimState>, latest: MetricsPoint | n
     return { level: 'paging', label: 'PAGING', text: `${head} · ${paging.map((a) => a.name).join(', ')}` };
   }
   const alerting = state.alerts.some((a) => a.state !== 'inactive');
-  const unhealthy = latest !== null && (latest.errorRatio > 0.001 || latest.p99 > 300);
+  const unhealthy = latest !== null && (latest.errorRatio > HEALTHY_ERROR_RATIO || latest.p99 > HEALTHY_P99_MS);
   if (alerting || unhealthy) return { level: 'degraded', label: 'DEGRADED', text: `${head} · degraded` };
   return { level: 'ok', label: 'OK', text: `${head} · all systems normal` };
 }

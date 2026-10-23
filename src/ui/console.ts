@@ -1,5 +1,8 @@
 import type { Loop } from '../app/loop.ts';
+import { el } from './dom.ts';
+import { motion } from '../app/motion.ts';
 import type { Simulation } from '../sim/simulation.ts';
+import { HEALTHY_ERROR_RATIO, HEALTHY_P99_MS } from '../sim/config.ts';
 import type { Postmortem } from '../sim/types.ts';
 import { configButton, createConfigDialog, type ConfigKey } from './config-dialog.ts';
 import { createSparkline } from './sparkline.ts';
@@ -27,12 +30,6 @@ const SEVERITY_ICON = { info: '·', ok: '✓', warn: '▲', crit: '●' } as con
 const CAPTION_SOURCES = new Set(['chaos', 'alertmanager', 'hpa', 'db']);
 const SVG = 'http://www.w3.org/2000/svg';
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
 
 let openConfig: ((key: ConfigKey, opener: HTMLElement) => void) | null = null;
 
@@ -85,7 +82,15 @@ export function mountConsole(regions: ConsoleRegions, { sim, loop }: { sim: Simu
       state,
       progress,
     );
-    button.addEventListener('click', () => sim.dispatch(action.command));
+    // aria-disabled rather than disabled: a busy card keeps keyboard focus and still says why.
+    button.addEventListener('click', () => {
+      // Check the live state, not the last 250 ms refresh, so a double-click can't queue two runs.
+      const card = chaosCards(sim.state, lastKillAt).find((c) => c.id === action.id);
+      if (button.getAttribute('aria-disabled') === 'true' || card?.status !== 'ready') return;
+      sim.dispatch(action.command);
+      if (action.id === 'killPod') lastKillAt = sim.state.t;
+      button.setAttribute('aria-disabled', 'true'); // until the next refresh shows the run
+    });
     actions.append(button);
     cards.set(action.id, { button, state, bar });
   }
@@ -108,7 +113,12 @@ export function mountConsole(regions: ConsoleRegions, { sim, loop }: { sim: Simu
   const reset = el('button', 'btn-ghost', 'Reset');
   reset.type = 'button';
   reset.addEventListener('click', () => sim.dispatch({ type: 'reset' }));
-  controls.append(recover, speed, reset);
+  const pause = el('button', 'btn-ghost', 'Pause motion');
+  pause.type = 'button';
+  pause.setAttribute('aria-pressed', 'false');
+  pause.addEventListener('click', () => motion.set(!motion.paused));
+  const offPause = motion.subscribe((paused) => pause.setAttribute('aria-pressed', String(paused)));
+  controls.append(recover, speed, pause, reset);
   const chaosFooter = el('div', 'panel-foot');
   chaosFooter.append(realConfig('workload'));
   regions.chaos.append(actions, controls, chaosFooter);
@@ -146,8 +156,8 @@ export function mountConsole(regions: ConsoleRegions, { sim, loop }: { sim: Simu
   }
   const signalDefs: SignalDef[] = [
     { key: 'rps', label: 'Requests', unit: (v) => `${Math.round(v)} rps`, tone: () => COLOURS.accent },
-    { key: 'p99', label: 'p99 latency', unit: (v) => `${Math.round(v)} ms`, tone: (v) => (v > 1_000 ? COLOURS.crit : v > 300 ? COLOURS.warn : COLOURS.accent) },
-    { key: 'errorRatio', label: 'Errors', unit: (v) => `${(v * 100).toFixed(2)}%`, tone: (v) => (v > 0.01 ? COLOURS.crit : v > 0.001 ? COLOURS.warn : COLOURS.accent) },
+    { key: 'p99', label: 'p99 latency', unit: (v) => `${Math.round(v)} ms`, tone: (v) => (v > 1_000 ? COLOURS.crit : v > HEALTHY_P99_MS ? COLOURS.warn : COLOURS.accent) },
+    { key: 'errorRatio', label: 'Errors', unit: (v) => `${(v * 100).toFixed(2)}%`, tone: (v) => (v > 0.01 ? COLOURS.crit : v > HEALTHY_ERROR_RATIO ? COLOURS.warn : COLOURS.accent) },
     { key: 'cpu', label: 'CPU (of request)', unit: (v) => `${Math.round(v * 100)}%`, tone: (v) => (v > 1.2 ? COLOURS.crit : v > 0.66 ? COLOURS.warn : COLOURS.accent) },
   ];
   const series = signalDefs.map((s) => ({ ...s, spark: createSparkline(s.label), value: el('span', 'signal-value', '–') }));
@@ -225,8 +235,12 @@ export function mountConsole(regions: ConsoleRegions, { sim, loop }: { sim: Simu
       if (e.run.kind === 'killPod') lastKillAt = e.t;
     }),
     sim.bus.on('timelineEvent', ({ entry }) => {
-      if (CAPTION_SOURCES.has(entry.source)) caption(entry.source, entry.message);
-      if (entry.source === 'alertmanager') live.textContent = entry.message;
+      if (!CAPTION_SOURCES.has(entry.source)) return;
+      caption(entry.source, entry.message);
+      // Status messages for screen readers; alerts take priority over chaos/DB/HPA lines.
+      if (entry.source === 'alertmanager' || pendingAnnouncement === null || !pendingAnnouncement.startsWith('FIRING')) {
+        pendingAnnouncement = entry.message;
+      }
     }),
     sim.bus.on('postmortemReady', ({ postmortem }) => {
       showPostmortem(postmortem);
@@ -240,17 +254,25 @@ export function mountConsole(regions: ConsoleRegions, { sim, loop }: { sim: Simu
   ];
 
   // ---- Refresh from the shared clock ----
+  let pendingAnnouncement: string | null = null;
+  let lastAnnounce = Number.NEGATIVE_INFINITY;
   let lastDraw = Number.NEGATIVE_INFINITY;
   let lastSeq = -1;
   const off = loop.add((_dt, now) => {
-    if (now - lastDraw < 250) return;
+    // Nothing to draw while the console layer is hidden behind the hero.
+    if (now - lastDraw < 250 || document.body.dataset.mode === 'hero') return;
     lastDraw = now;
     const state = sim.state;
+    if (pendingAnnouncement !== null && now - lastAnnounce >= 1_500) {
+      live.textContent = pendingAnnouncement;
+      pendingAnnouncement = null;
+      lastAnnounce = now;
+    }
 
     for (const c of chaosCards(state, lastKillAt)) {
       const view = cards.get(c.id)!;
       view.button.dataset.status = c.status;
-      view.button.disabled = c.status === 'running' || c.status === 'cooldown' || c.status === 'disabled';
+      view.button.setAttribute('aria-disabled', String(c.status !== 'ready'));
       view.state.textContent = STATUS_TEXT[c.status];
       view.bar.style.transform = `scaleX(${c.remaining.toFixed(3)})`;
     }
@@ -296,6 +318,7 @@ export function mountConsole(regions: ConsoleRegions, { sim, loop }: { sim: Simu
 
   return () => {
     off();
+    offPause();
     unsubscribe.forEach((u) => u());
     live.remove();
   };

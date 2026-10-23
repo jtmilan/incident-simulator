@@ -17,7 +17,7 @@ test('the console runs the whole story: kill, page, recover, postmortem', async 
   const chaos = page.getByRole('complementary', { name: 'Chaos experiments' });
   const health = page.getByRole('complementary', { name: 'Service health' });
   const timeline = page.getByRole('region', { name: 'Incident timeline' });
-  await expect(chaos.getByRole('button', { name: /Kill a pod/ })).toBeEnabled();
+  await expect(chaos.getByRole('button', { name: /Kill a pod/ })).toHaveAttribute('aria-disabled', 'false');
   await expect(health).toContainText('SLO 99.9% · window 30d → 1h (demo)');
   await expect(health).toContainText('3 ready / 3 desired');
 
@@ -32,10 +32,24 @@ test('the console runs the whole story: kill, page, recover, postmortem', async 
 
   // Escalate: 20% errors page within seconds at 5×.
   await chaos.getByRole('button', { name: /Inject 5xx errors/ }).click();
-  await expect(chaos.getByRole('button', { name: /Inject 5xx errors/ })).toBeDisabled();
+  await expect(chaos.getByRole('button', { name: /Inject 5xx errors/ })).toHaveAttribute('aria-disabled', 'true');
+  await expect(chaos.getByRole('button', { name: /Inject 5xx errors/ })).toBeFocused();
   await expect(page.getByTestId('status')).toContainText('PAGING', { timeout: 10_000 });
   await expect(health.locator('.alert[data-state="firing"]')).toContainText('HighErrorBudgetBurn');
   await page.screenshot({ path: testInfo.outputPath('console-paging.png') });
+
+  // Pause motion freezes the simulation clock (WCAG 2.2.2), and resumes it.
+  const pauseButton = chaos.getByRole('button', { name: 'Pause motion' });
+  await pauseButton.click();
+  await expect(pauseButton).toHaveAttribute('aria-pressed', 'true');
+  const frozen = await page.evaluate(() => document.querySelector('[data-region="timeline"] .row-time')?.textContent);
+  await page.waitForTimeout(1_200);
+  expect(await page.evaluate(() => document.querySelector('[data-region="timeline"] .row-time')?.textContent)).toBe(frozen);
+  await pauseButton.click();
+  await expect(pauseButton).toHaveAttribute('aria-pressed', 'false');
+
+  // Screen readers hear what happened.
+  await expect(page.locator('[role="status"][aria-live="polite"]')).not.toBeEmpty();
 
   // Resolve: recover, then the postmortem appears.
   await chaos.getByRole('button', { name: 'Recover all' }).click();

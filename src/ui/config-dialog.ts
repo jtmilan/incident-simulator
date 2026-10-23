@@ -1,13 +1,8 @@
 import { highlightLine, REAL_CONFIG } from './real-config.ts';
+import { el } from './dom.ts';
 
 export type ConfigKey = keyof typeof REAL_CONFIG;
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
 
 /**
  * One native <dialog> for every "real config" panel: showModal() gives focus containment, Esc to

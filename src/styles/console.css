@@ -23,12 +23,12 @@
     transform var(--dur-hover) var(--ease-out);
 }
 
-.action:hover:not(:disabled) {
+.action:hover:not([aria-disabled='true']) {
   border-color: var(--color-accent);
   transform: translateY(-1px);
 }
 
-.action:disabled {
+.action[aria-disabled='true'] {
   cursor: default;
 }
 
@@ -394,6 +394,7 @@
 }
 
 .config-link {
+  min-height: 24px;
   padding: 2px 0;
   border: 0;
   background: none;
@@ -522,4 +523,19 @@
   .console-grid {
     padding-inline: var(--space-4);
   }
+}
+
+/* Interactive outlines at ≥ 3:1 against panels (WCAG 1.4.11). */
+.action,
+.btn-ghost,
+.speed,
+.mobile-tabs {
+  border-color: var(--color-line-strong);
+}
+
+/* "Pause motion" (WCAG 2.2.2): freeze CSS pulses and glows too. */
+.motion-paused *,
+.motion-paused *::before,
+.motion-paused *::after {
+  animation-play-state: paused !important;
 }

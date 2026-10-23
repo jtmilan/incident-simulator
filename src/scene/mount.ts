@@ -1,4 +1,5 @@
 import type { Loop } from '../app/loop.ts';
+import { motion } from '../app/motion.ts';
 import type { Simulation } from '../sim/simulation.ts';
 import { createClusterScene } from './cluster-scene.ts';
 import { currentDevice, pickQuality } from './quality.ts';
@@ -56,6 +57,7 @@ export async function mountScene({ sim, loop }: { sim: Simulation; loop: Loop })
   let averageCost = 0;
   let lastDegrade = 0;
   const off = loop.add((dt, now) => {
+    if (motion.paused) return; // keep the last frame on screen
     pendingDt += dt;
     if (now - lastRender < 1_000 / maxFps - 1) return;
     const start = performance.now();

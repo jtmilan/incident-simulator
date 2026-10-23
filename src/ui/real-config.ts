@@ -1,5 +1,12 @@
 import {
+  BURN_ALERT_FOR_MS,
+  BURN_LONG_WINDOW_MS,
   BURN_RATE_PAGE,
+  BURN_SHORT_WINDOW_MS,
+  DB_PRIMARY_DOWN_MS,
+  DB_PROMOTING_MS,
+  DB_RECONNECTING_MS,
+  HPA_SCALE_DOWN_STABILIZATION_MS,
   HPA_MAX_REPLICAS,
   HPA_MIN_REPLICAS,
   HPA_TARGET_UTILIZATION,
@@ -93,7 +100,7 @@ spec:
         - { type: Percent, value: 100, periodSeconds: 15 }
         - { type: Pods, value: 4, periodSeconds: 15 }
     scaleDown:
-      stabilizationWindowSeconds: 300   # the countdown in the health panel
+      stabilizationWindowSeconds: ${s(HPA_SCALE_DOWN_STABILIZATION_MS)}   # the countdown in the health panel
       policies:
         - { type: Percent, value: 100, periodSeconds: 15 }`,
       },
@@ -113,7 +120,7 @@ spec:
   slo: {
     title: 'SLO: multi-window, multi-burn-rate alerting',
     intro:
-      'Production rule from the Google SRE Workbook. The simulation compresses the 30-day window to 1 hour, so it keeps the 14.4× threshold but evaluates it over 60 s / 5 s windows with a 5 s for.',
+      `Production rule from the Google SRE Workbook. The simulation compresses the 30-day window to 1 hour, so it keeps the ${BURN_RATE_PAGE}× threshold but evaluates it over ${s(BURN_LONG_WINDOW_MS)} s / ${s(BURN_SHORT_WINDOW_MS)} s windows with a ${s(BURN_ALERT_FOR_MS)} s for.`,
     files: [
       {
         file: 'checkout-api-slo.yaml',
@@ -176,7 +183,7 @@ sum(rate(container_cpu_usage_seconds_total{container="api",pod=~"checkout-api-.*
   database: {
     title: 'Postgres: CloudNativePG cluster',
     intro:
-      'Simulated failover: ~24 s of failed writes (8 s detection, 10 s promotion, 6 s reconnect) while reads continue. For comparison, AWS documents 60–120 s for an RDS Multi-AZ instance failover.',
+      `Simulated failover: ~${s(DB_PRIMARY_DOWN_MS + DB_PROMOTING_MS + DB_RECONNECTING_MS)} s of failed writes (${s(DB_PRIMARY_DOWN_MS)} s detection, ${s(DB_PROMOTING_MS)} s promotion, ${s(DB_RECONNECTING_MS)} s reconnect) while reads continue. For comparison, AWS documents 60–120 s for an RDS Multi-AZ instance failover.`,
     files: [
       {
         file: 'checkout-db.yaml',

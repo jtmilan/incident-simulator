@@ -85,3 +85,15 @@
 .debug-timeline .sev-crit {
   color: var(--color-crit);
 }
+
+.debug-floating {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 5;
+  width: min(44rem, calc(100vw - 2rem));
+  max-height: 45vh;
+  margin: 0;
+  overflow: auto;
+  opacity: 0.95;
+}

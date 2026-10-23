@@ -6,6 +6,8 @@
   --color-grid: #1c2631;
   --color-text: #e6edf3;
   --color-muted: #7c8896;
+  /* Outlines of interactive controls: 3.2:1 on panels (WCAG 1.4.11). */
+  --color-line-strong: #5b6a7c;
 
   /* Single accent: the focal element only */
   --color-accent: #4cc9f0;

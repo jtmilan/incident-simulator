@@ -83,6 +83,10 @@ export const DB_POOL_MAX = 20;
 export const DB_QUERY_SECONDS = 0.02;
 export const DB_REJOIN_LAG_SPIKE_MS = 2_500;
 
+// ---- What "healthy" means (status strip, sparkline tones, incident close) ----
+export const HEALTHY_ERROR_RATIO = 0.001;
+export const HEALTHY_P99_MS = 300;
+
 // ---- Incidents ----
 /** Health must hold this long before an incident closes and the postmortem is written. */
 export const INCIDENT_RECOVERY_HOLD_MS = 5_000;

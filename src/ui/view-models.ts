@@ -1,4 +1,11 @@
-import { BURN_RATE_PAGE, SLO_WINDOW_LABEL } from '../sim/config.ts';
+import {
+  BURN_LONG_WINDOW_MS,
+  BURN_RATE_PAGE,
+  BURN_SHORT_WINDOW_MS,
+  HPA_SCALE_DOWN_STABILIZATION_MS,
+  SLO_TARGET,
+  SLO_WINDOW_LABEL,
+} from '../sim/config.ts';
 import type { ChaosKind, Command, Postmortem, SimState, TimelineEvent } from '../sim/types.ts';
 
 // Plain functions that turn simulator state into what the console shows. No DOM, so they're tested.
@@ -90,12 +97,12 @@ export function budgetRing(remaining: number): { pct: string; tone: Tone; fracti
   };
 }
 
-export const SLO_CAPTION = `SLO 99.9% · window ${SLO_WINDOW_LABEL}`;
+export const SLO_CAPTION = `SLO ${(SLO_TARGET * 100).toFixed(1)}% · window ${SLO_WINDOW_LABEL}`;
 
 const rate = (x: number) => (x < 10 ? x.toFixed(1) : String(Math.round(x)));
 
 export function burnText(slo: Readonly<SimState['slo']>): string {
-  return `${rate(slo.burnLong)}× (60 s) · ${rate(slo.burnShort)}× (5 s) · pages at ${BURN_RATE_PAGE}×`;
+  return `${rate(slo.burnLong)}× (${BURN_LONG_WINDOW_MS / 1_000} s) · ${rate(slo.burnShort)}× (${BURN_SHORT_WINDOW_MS / 1_000} s) · pages at ${BURN_RATE_PAGE}×`;
 }
 
 export function podsText(state: Readonly<SimState>): { text: string; hold: string | null } {
@@ -103,7 +110,7 @@ export function podsText(state: Readonly<SimState>): { text: string; hold: strin
   const hold = state.hpa.scaleDownHoldUntil;
   return {
     text: `${ready} ready / ${state.deployment.desiredReplicas} desired · HPA target ${Math.round(state.hpa.targetUtilization * 100)}%`,
-    hold: hold === null ? null : `scale-down held ${formatClock(hold - state.t)} (300 s stabilization)`,
+    hold: hold === null ? null : `scale-down held ${formatClock(hold - state.t)} (${HPA_SCALE_DOWN_STABILIZATION_MS / 1_000} s stabilization)`,
   };
 }
 

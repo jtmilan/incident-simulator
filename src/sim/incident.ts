@@ -1,4 +1,4 @@
-import { INCIDENT_RECOVERY_HOLD_MS } from './config.ts';
+import { HEALTHY_ERROR_RATIO, HEALTHY_P99_MS, INCIDENT_RECOVERY_HOLD_MS } from './config.ts';
 import { isDatabaseSettled } from './database.ts';
 import type { IncidentState, Postmortem, SimState, TickContext, TickTraffic } from './types.ts';
 
@@ -26,8 +26,8 @@ function isHealthy(state: SimState, t: number, tick: TickTraffic): boolean {
     ready >= desired &&
     !starting &&
     isDatabaseSettled(state) &&
-    tick.errorRatio < 0.001 &&
-    tick.p99 < 300
+    tick.errorRatio < HEALTHY_ERROR_RATIO &&
+    tick.p99 < HEALTHY_P99_MS
   );
 }
 

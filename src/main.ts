@@ -8,6 +8,7 @@ import './styles/console.css';
 
 import { isSoftwareRenderer, webglRendererName } from './app/gpu.ts';
 import { createLoop } from './app/loop.ts';
+import { motion } from './app/motion.ts';
 import { goatCounterCode, injectGoatCounter } from './config/analytics.ts';
 import { getBuildInfo } from './config/build-info.ts';
 import type { SceneHandle } from './scene/mount.ts';
@@ -53,7 +54,9 @@ if (counter) injectGoatCounter(document, counter);
 // One simulator and one clock for everything on the page. The status strip reads it from the start.
 const sim = new Simulation({ seed: 1 });
 const loop = createLoop();
-loop.add((dt) => sim.advance(dt));
+loop.add((dt) => {
+  if (!motion.paused) sim.advance(dt);
+});
 const statusRoot = document.querySelector<HTMLElement>('[data-testid="status"]');
 if (statusRoot) mountStatusStrip(statusRoot, { sim, loop });
 loop.start();
@@ -90,18 +93,24 @@ const consoleTitle = document.querySelector<HTMLElement>('#console-title');
 const enterButton = document.querySelector<HTMLButtonElement>('[data-enter]');
 const backButton = document.querySelector<HTMLButtonElement>('[data-back]');
 let scene: SceneHandle | null = null;
-let previousMode: Mode | null = null;
+// Where focus should land once a user-initiated switch completes (works with and without the iris).
+let pendingFocus: 'console' | 'hero' | null = null;
+
+/** One rule for camera framing and labels, used by mode changes and by a late-loading scene. */
+const framingFor = (mode: Mode): 'hero' | 'console' => (mode === 'opening' || mode === 'console' ? 'console' : 'hero');
+const syncScene = (mode: Mode, immediate = false) => {
+  scene?.setFraming(framingFor(mode), immediate);
+  scene?.setLabelsVisible(mode === 'console');
+};
 
 const applyMode = (mode: Mode) => {
   document.body.dataset.mode = mode;
-  const showingConsole = mode !== 'hero';
   if (hero) hero.inert = mode === 'console';
   if (consoleLayer) consoleLayer.inert = mode === 'hero';
-  scene?.setFraming(showingConsole && mode !== 'closing' ? 'console' : 'hero');
-  scene?.setLabelsVisible(mode === 'console');
-  if (mode === 'console' && previousMode === 'opening') consoleTitle?.focus({ preventScroll: true });
-  if (mode === 'hero' && previousMode === 'closing') enterButton?.focus({ preventScroll: true });
-  previousMode = mode;
+  syncScene(mode);
+  if (mode === 'console' && pendingFocus === 'console') consoleTitle?.focus({ preventScroll: true });
+  if (mode === 'hero' && pendingFocus === 'hero') enterButton?.focus({ preventScroll: true });
+  if (mode === 'console' || mode === 'hero') pendingFocus = null;
 };
 
 const modes = new ModeController(
@@ -120,21 +129,39 @@ const modes = new ModeController(
 loop.add((_dt, now) => modes.tick(now));
 
 /** Where the iris opens: the pointer, or the button's centre for keyboard activation. */
-const origin = (event: MouseEvent, el: HTMLElement) => {
-  if (event.detail > 0) return { x: event.clientX, y: event.clientY };
-  const rect = el.getBoundingClientRect();
-  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+const origin = (event: MouseEvent | null, el: HTMLElement | null) => {
+  if (event && event.detail > 0) return { x: event.clientX, y: event.clientY };
+  const rect = el?.getBoundingClientRect();
+  return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 };
-enterButton?.addEventListener('click', (event) => {
+const openConsole = (event: MouseEvent | null) => {
   const { x, y } = origin(event, enterButton);
+  pendingFocus = 'console';
   modes.open(x, y);
-  history.replaceState(null, '', '#console');
+};
+const closeConsole = (event: MouseEvent | null) => {
+  const { x, y } = origin(event, backButton);
+  pendingFocus = 'hero';
+  modes.close(x, y);
+};
+
+// The console is a history entry: Enter pushes #console, browser Back (or ← Overview) returns.
+enterButton?.addEventListener('click', (event) => {
+  history.pushState({ ccr: 'console' }, '', '#console');
+  openConsole(event);
 });
 backButton?.addEventListener('click', (event) => {
-  const { x, y } = origin(event, backButton);
-  modes.close(x, y);
-  history.replaceState(null, '', window.location.pathname + window.location.search);
+  if ((history.state as { ccr?: string } | null)?.ccr === 'console') history.back();
+  else history.replaceState(null, '', window.location.pathname + window.location.search);
+  closeConsole(event);
 });
+const followLocation = () => {
+  const wanted = parseMode(window.location);
+  if (wanted === 'console' && modes.mode === 'hero') openConsole(null);
+  if (wanted === 'hero' && modes.mode === 'console') closeConsole(null);
+};
+window.addEventListener('popstate', followLocation);
+window.addEventListener('hashchange', followLocation);
 
 // ---- 3D scene ----
 // Loads after first paint so the hero text never waits on WebGL.
@@ -149,8 +176,7 @@ const loadScene = () =>
       .then(({ mountScene }) => mountScene({ sim, loop }))
       .then((handle) => {
         scene = handle;
-        scene?.setFraming(modes.mode === 'hero' ? 'hero' : 'console', true);
-        scene?.setLabelsVisible(modes.mode === 'console');
+        syncScene(modes.mode, true);
       })
       // A failed chunk load (e.g. a stale tab after a redeploy) leaves the static layout in place.
       .catch((error: unknown) => console.warn('[scene] not loaded', error));
@@ -174,8 +200,10 @@ else window.addEventListener('load', startScene, { once: true });
 if (debug) {
   import('./debug/debug-view.ts')
     .then(({ mountDebugView }) => {
+      // Floating, so it stays usable in console mode (where the hero is hidden and inert).
       const host = document.createElement('section');
-      document.querySelector('main')?.append(host);
+      host.classList.add('debug-floating');
+      document.body.append(host);
       mountDebugView(host, { sim, loop });
     })
     .catch((error: unknown) => console.warn('[debug] not loaded', error));
