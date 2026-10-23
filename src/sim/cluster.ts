@@ -15,10 +15,11 @@ import type { Rng } from './rng.ts';
 import type { ClusterNode, Deployment, Pod, PodStatus, SimState, TickContext } from './types.ts';
 
 const between = (rng: Rng, [min, max]: readonly [number, number]) => rng.range(min, max);
+const NAME_CHARS = [...K8S_NAME_ALPHABET];
 
 export function k8sName(rng: Rng, length: number): string {
   let out = '';
-  for (let i = 0; i < length; i++) out += rng.pick([...K8S_NAME_ALPHABET]);
+  for (let i = 0; i < length; i++) out += rng.pick(NAME_CHARS);
   return out;
 }
 
@@ -37,18 +38,21 @@ export function initialCluster(
 
   // The page opens on a cluster that has been healthy for an hour.
   const age = 3_600_000;
-  const pods: Pod[] = Array.from({ length: INITIAL_REPLICAS }, (_, i) => ({
-    id: newPodId(rsHash, rng, []),
-    nodeId: nodes[i % nodes.length]!.id,
-    status: 'Ready',
-    createdAt: t - age,
-    statusSince: t - age,
-    statusEndsAt: Number.POSITIVE_INFINITY,
-    appReadyAt: t - age,
-    nextProbeAt: null,
-    readyAt: t - age,
-    schedulingFailed: false,
-  }));
+  const pods: Pod[] = [];
+  for (let i = 0; i < INITIAL_REPLICAS; i++) {
+    pods.push({
+      id: newPodId(rsHash, rng, pods),
+      nodeId: nodes[i % nodes.length]!.id,
+      status: 'Ready',
+      createdAt: t - age,
+      statusSince: t - age,
+      statusEndsAt: Number.POSITIVE_INFINITY,
+      appReadyAt: t - age,
+      nextProbeAt: null,
+      readyAt: t - age,
+      schedulingFailed: false,
+    });
+  }
   return { rsHash, nodes, deployment, pods };
 }
 

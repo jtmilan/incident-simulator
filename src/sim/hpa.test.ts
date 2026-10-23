@@ -74,6 +74,16 @@ describe('HPA in the simulation', () => {
     expect(sim.state.timeline.some((e) => /New size: 3 \(was 7\).*below target/.test(e.message))).toBe(true);
   });
 
+  it('clears the scale-down countdown as soon as the hold expires, not at the next sync', () => {
+    const sim = new Simulation({ seed: 34 });
+    run(sim, 16_000);
+    sim.dispatch({ type: 'trafficSurge', multiplier: 3, durationMs: 120_000 });
+    run(sim, 160_000);
+    const hold = sim.state.hpa.scaleDownHoldUntil!;
+    while (sim.state.t < hold) sim.advance(100);
+    expect(sim.state.hpa.scaleDownHoldUntil).toBeNull();
+  });
+
   it('never exceeds max replicas, even under a ×6 surge', () => {
     const sim = new Simulation({ seed: 33 });
     run(sim, 16_000);

@@ -125,6 +125,29 @@ describe('Simulation', () => {
     expect(sim.state.seed).toBe(7);
   });
 
+  it('keeps commands queued after a reset, on the new timeline', () => {
+    const sim = new Simulation({ seed: 8 });
+    sim.advance(5_000);
+    sim.dispatch({ type: 'reset' });
+    sim.dispatch({ type: 'killPod' });
+    sim.schedule(3_000, { type: 'injectErrors', ratio: 0.05, durationMs: 10_000 });
+    sim.advance(100); // reset applies; the new timeline starts at t = 0
+    sim.advance(100); // the kill dispatched after it applies on the first new tick
+    expect(sim.state.t).toBe(100);
+    expect(sim.state.pods.some((p) => p.status === 'Terminating')).toBe(true);
+    sim.advance(1_000);
+    sim.advance(1_000);
+    sim.advance(1_000);
+    expect(sim.state.chaos.some((r) => r.kind === 'injectErrors' && r.startedAt === 3_000)).toBe(true);
+  });
+
+  it('gives the initial pods distinct names for every seed', () => {
+    for (let seed = 1; seed <= 200; seed++) {
+      const ids = new Simulation({ seed }).state.pods.map((p) => p.id);
+      expect(new Set(ids).size).toBe(ids.length);
+    }
+  });
+
   it('keeps only the newest timeline entries', () => {
     const sim = new Simulation({ seed: 5 });
     for (let i = 0; i < 60; i++) {

@@ -1,3 +1,4 @@
+import { BURN_RATE_PAGE, SLO_WINDOW_LABEL } from '../sim/config.ts';
 import { Simulation } from '../sim/simulation.ts';
 import type { Command, SimState } from '../sim/types.ts';
 import './debug.css';
@@ -47,7 +48,7 @@ function summarize(state: Readonly<SimState>, sim: Simulation) {
   const metrics = m
     ? [
         `rps     ${m.rps.toFixed(0)}`,
-        `cpu     ${pct(m.cpu, 0)} of request (HPA target 60%)`,
+        `cpu     ${pct(m.cpu, 0)} of request (HPA target ${pct(state.hpa.targetUtilization, 0)})`,
         `latency p50 ${m.p50.toFixed(0)} ms · p95 ${m.p95.toFixed(0)} ms · p99 ${m.p99.toFixed(0)} ms`,
         `errors  ${pct(m.errorRatio, 2)}`,
         `pods    ${m.readyPods} ready / ${state.deployment.desiredReplicas} desired` +
@@ -55,9 +56,9 @@ function summarize(state: Readonly<SimState>, sim: Simulation) {
       ].join('\n')
     : 'warming up…';
   const slo = [
-    `SLO ${pct(state.slo.target)} · window ${'30d → 1h (demo)'}`,
+    `SLO ${pct(state.slo.target)} · window ${SLO_WINDOW_LABEL}`,
     `budget remaining ${pct(state.slo.budgetRemaining)}`,
-    `burn ${state.slo.burnLong.toFixed(1)}× (60 s) · ${state.slo.burnShort.toFixed(1)}× (5 s) · page at 14.4×`,
+    `burn ${state.slo.burnLong.toFixed(1)}× (60 s) · ${state.slo.burnShort.toFixed(1)}× (5 s) · page at ${BURN_RATE_PAGE}×`,
     ...state.alerts.map((a) => `${a.state.toUpperCase().padEnd(8)} ${a.name} [${a.severity}]`),
   ].join('\n');
   const db = [
@@ -142,8 +143,9 @@ export function mountDebugView(host: HTMLElement): () => void {
     frame = requestAnimationFrame(loop);
   };
   const onVisibility = () => {
-    if (document.hidden) cancelAnimationFrame(frame);
-    else {
+    // Always cancel first so a tab that was hidden at mount can't end up with two loops.
+    cancelAnimationFrame(frame);
+    if (!document.hidden) {
       last = performance.now();
       frame = requestAnimationFrame(loop);
     }

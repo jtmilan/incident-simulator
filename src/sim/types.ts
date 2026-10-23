@@ -120,6 +120,11 @@ export interface SloState {
   burnShort: number;
   burnLong: number;
   ring: { requests: number[]; errors: number[]; next: number };
+  /** Bad requests per completed second over the rolling SLO window (budget rolls off after 1 h). */
+  errorSeconds: number[];
+  errorsInWindow: number;
+  secondErrors: number;
+  secondTicks: number;
 }
 
 export type AlertName = 'HighErrorBudgetBurn' | 'DBPrimaryDown' | 'PodNotReady';

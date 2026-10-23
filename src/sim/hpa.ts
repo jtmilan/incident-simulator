@@ -40,6 +40,8 @@ export function scaleUpLimit(current: number): number {
  */
 export function reconcileHpa(state: SimState, ctx: TickContext, utilization: number, readyPods: number): void {
   const { hpa, deployment } = state;
+  // The hold expires on its own; the scale-down itself waits for the next sync.
+  if (hpa.scaleDownHoldUntil !== null && ctx.t >= hpa.scaleDownHoldUntil) hpa.scaleDownHoldUntil = null;
   if (ctx.t - hpa.lastSyncAt < HPA_SYNC_PERIOD_MS || readyPods === 0) return;
   hpa.lastSyncAt = ctx.t;
   hpa.lastUtilization = utilization;

@@ -6,6 +6,9 @@ import {
 } from './config.ts';
 import type { AlertLifecycle, AlertName, AlertSeverity, AlertState, SimState, TickContext } from './types.ts';
 
+const stuckPods = (s: SimState, t: number) =>
+  s.pods.filter((p) => p.status !== 'Ready' && p.status !== 'Terminating' && t - p.createdAt > POD_NOT_READY_AFTER_MS);
+
 interface AlertRule {
   name: AlertName;
   severity: AlertSeverity;
@@ -35,8 +38,8 @@ export const ALERT_RULES: readonly AlertRule[] = [
     name: 'PodNotReady',
     severity: 'ticket',
     forMs: 0,
-    summary: (s) => `${s.pods.filter((p) => p.status !== 'Ready' && p.status !== 'Terminating').length} checkout-api pod(s) not Ready for over 30s`,
-    condition: (s, t) => s.pods.some((p) => p.status !== 'Ready' && p.status !== 'Terminating' && t - p.createdAt > POD_NOT_READY_AFTER_MS),
+    summary: (s) => `${stuckPods(s, s.t).length} checkout-api pod(s) not Ready for over 30s`,
+    condition: (s, t) => stuckPods(s, t).length > 0,
   },
 ];
 
@@ -65,14 +68,13 @@ export function evaluateAlerts(state: SimState, ctx: TickContext): void {
     const active = rule.condition(state, ctx.t);
 
     if (active) {
+      alert.summary = rule.summary(state);
       if (alert.state === 'inactive') {
         alert.pendingSince = ctx.t;
-        alert.summary = rule.summary(state);
         transition(alert, 'pending', ctx);
       }
       if (alert.state === 'pending' && ctx.t - alert.pendingSince! >= rule.forMs) {
         alert.firedAt = ctx.t;
-        alert.summary = rule.summary(state);
         transition(alert, 'firing', ctx);
         ctx.log('alertmanager', 'crit', `FIRING [${rule.severity}] ${rule.name}: ${alert.summary}`);
       }

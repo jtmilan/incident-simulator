@@ -38,6 +38,16 @@ describe('SLO and error budget', () => {
     expect(sim.state.slo.burnLong).toBeGreaterThan(14);
   });
 
+  it('rolls spent budget off after the 1 h window', () => {
+    const sim = new Simulation({ seed: 44 });
+    sim.dispatch({ type: 'injectErrors', ratio: 0.5, durationMs: 20_000 });
+    run(sim, 30_000);
+    expect(sim.state.slo.budgetRemaining).toBeLessThan(0);
+    run(sim, 3_600_000);
+    expect(sim.state.slo.budgetRemaining).toBeGreaterThan(0.7);
+    expect(sim.state.slo.errorSeconds.length).toBe(3_600);
+  });
+
   it('lets the budget go negative once overspent', () => {
     const sim = new Simulation({ seed: 43 });
     sim.dispatch({ type: 'injectErrors', ratio: 0.5, durationMs: 60_000 });

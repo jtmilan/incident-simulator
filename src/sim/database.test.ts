@@ -83,10 +83,13 @@ describe('database failover', () => {
     sim.dispatch({ type: 'recoverAll' });
     run(sim, 2_000);
 
-    expect(sim.state.timeline.map((e) => e.message)).toContain('Failover already in progress; ignoring');
+    const messages = sim.state.timeline.map((e) => e.message);
+    expect(messages).toContain('Failover already in progress; ignoring');
+    expect(messages).toContain('Recover all: no active experiments; database failover cannot be undone, letting it complete');
     expect(sim.state.db.phase).toBe('PrimaryDown');
-    expect(sim.state.chaos).toEqual([]);
+    expect(sim.state.chaos.map((r) => r.kind)).toEqual(['failoverDatabase']);
     run(sim, 30_000);
     expect(sim.state.db.phase).toBe('Healthy');
+    expect(sim.state.chaos).toEqual([]);
   });
 });
