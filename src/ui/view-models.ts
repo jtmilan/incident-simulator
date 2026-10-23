@@ -52,6 +52,11 @@ export const ACTIONS: readonly ActionSpec[] = [
   },
 ];
 
+/** A fresh copy of an action's preset command (callers can't mutate the preset). */
+export function commandFor(id: ActionId): Command {
+  return { ...ACTIONS.find((a) => a.id === id)!.command };
+}
+
 export const KILL_COOLDOWN_MS = 3_000;
 
 export type CardStatus = 'ready' | 'running' | 'cooldown' | 'disabled';
@@ -81,6 +86,9 @@ export function chaosCards(state: Readonly<SimState>, lastKillAt: number | null)
     return { id, status: 'ready', remaining: 0 };
   });
 }
+
+export const percent = (x: number, digits = 0) => `${(x * 100).toFixed(digits)}%`;
+export const wholeSeconds = (ms: number) => Math.round(ms / 1_000);
 
 export function formatClock(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1_000));

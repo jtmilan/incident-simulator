@@ -63,10 +63,8 @@ const loop = createLoop();
 loop.add((dt) => {
   if (!motion.paused) sim.advance(dt);
 });
-const statusRoot = document.querySelector<HTMLElement>('[data-testid="status"]');
-if (statusRoot) mountStatusStrip(statusRoot, { sim, loop });
-const footerStatus = document.querySelector<HTMLElement>('[data-footer-status]');
-if (footerStatus) mountStatusStrip(footerStatus, { sim, loop });
+// The strip at the top and the footer's status line.
+mountStatusStrip([...document.querySelectorAll<HTMLElement>('[data-testid="status"], [data-footer-status]')], { sim, loop });
 loop.start();
 
 const debug = new URLSearchParams(window.location.search).has('debug');
@@ -178,9 +176,14 @@ const openConsole = (event: MouseEvent | null, from: HTMLElement | null = enterB
 /** The tour runs in the console: restart it there, or open the console and start once the iris is done. */
 const startTour = (event: MouseEvent | null, from: HTMLElement | null) => {
   if (modes.mode === 'console') return tour.start(from);
+  if (modes.mode === 'closing') {
+    // Mid-close: finish closing, and don't leave a #tour URL behind for the next reload.
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    return;
+  }
   tourOpener = from;
   if (modes.mode === 'hero') openConsole(event, from, 'tour');
-  else if (modes.mode === 'opening') pendingFocus = 'tour';
+  else pendingFocus = 'tour'; // opening: start once the iris is done
 };
 
 /** A scenario link opens the console and starts its experiment a beat later, so the visitor sees it begin. */
@@ -188,7 +191,7 @@ const SCENARIO_DELAY_MS = 1_200;
 const runScenario = (command: Command) => {
   history.replaceState(history.state, '', '#console'); // run once: Back/Forward or a reload won't repeat it
   if (modes.mode === 'hero') openConsole(null);
-  sim.schedule(sim.state.t + SCENARIO_DELAY_MS, command);
+  sim.dispatchAfter(SCENARIO_DELAY_MS, command);
 };
 const closeConsole = (event: MouseEvent | null) => {
   const { x, y } = origin(event, backButton);
@@ -198,14 +201,27 @@ const closeConsole = (event: MouseEvent | null) => {
 
 // The console is a history entry: Enter pushes #console, browser Back (or ← Overview) returns.
 enterButton?.addEventListener('click', (event) => {
+  if (modes.mode !== 'hero') return;
   history.pushState({ ccr: 'console' }, '', '#console');
   openConsole(event);
 });
-document.querySelectorAll<HTMLButtonElement>('[data-tour-start]').forEach((button) =>
-  button.addEventListener('click', (event) => {
+// Tour buttons, and the footer's #tour / #console links, which take the same history path as the
+// buttons (a plain fragment link would leave an entry that ← Overview can't step back over).
+document.querySelectorAll<HTMLElement>('[data-tour-start], a[href="#tour"]').forEach((trigger) =>
+  trigger.addEventListener('click', (event) => {
+    event.preventDefault();
+    if (modes.mode === 'closing') return;
     if (modes.mode === 'hero') history.pushState({ ccr: 'console' }, '', '#tour');
     else history.replaceState(history.state, '', '#tour');
-    startTour(event, button);
+    startTour(event, trigger);
+  }),
+);
+document.querySelectorAll<HTMLAnchorElement>('a[href="#console"]').forEach((link) =>
+  link.addEventListener('click', (event) => {
+    event.preventDefault();
+    if (modes.mode !== 'hero') return;
+    history.pushState({ ccr: 'console' }, '', '#console');
+    openConsole(event, link);
   }),
 );
 backButton?.addEventListener('click', (event) => {

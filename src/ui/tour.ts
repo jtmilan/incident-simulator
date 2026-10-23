@@ -1,4 +1,5 @@
 import type { Loop } from '../app/loop.ts';
+import { motion } from '../app/motion.ts';
 import type { Simulation } from '../sim/simulation.ts';
 import type { SimEvent } from '../sim/types.ts';
 import { el } from './dom.ts';
@@ -76,6 +77,11 @@ export function createTour({ sim, loop, reducedMotion, reveal, fallbackFocus, on
   let progress: StepProgress[] = [];
   let ran = new Set<number>();
   let box: Box | null = null;
+  /** The element the spotlight frames and the card's size: looked up when the step or its state changes, not per frame. */
+  let target: HTMLElement | null = null;
+  let cardSize = { width: 0, height: 0 };
+  /** Resets the tour dispatched itself (step 1), which must not count as the visitor resetting mid-step. */
+  let ownResets = 0;
   let lastStatus = '';
   let advanceTimer: ReturnType<typeof setTimeout> | null = null;
   let offLoop: (() => void) | null = null;
@@ -86,21 +92,26 @@ export function createTour({ sim, loop, reducedMotion, reveal, fallbackFocus, on
     const s = step();
     return progress[index]?.met && s.doneTarget ? s.doneTarget : s.target;
   };
-  const targetEl = () => document.querySelector<HTMLElement>(`[data-tour="${targetId()}"]`);
 
-  const bringIntoView = () => {
-    const target = targetEl();
+  /** Finds the current target and brings it on screen (selecting its tab on phones). */
+  const retarget = () => {
+    target = document.querySelector<HTMLElement>(`[data-tour="${targetId()}"]`);
     if (!target) return;
     reveal?.(target);
     target.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: reducedMotion ? 'auto' : 'smooth' });
   };
 
+  const measureCard = () => {
+    cardSize = { width: card.offsetWidth, height: card.offsetHeight };
+  };
+
   const setStatus = () => {
-    const text = statusLine(step(), progress[index]!, sim.state.t);
+    const text = statusLine(step(), progress[index]!, sim.state.t, motion.paused);
     if (text === lastStatus) return;
     lastStatus = text;
     status.textContent = text;
     status.dataset.met = String(progress[index]!.met);
+    measureCard(); // the status line can change the card's height
   };
 
   const show = (i: number, { focus }: { focus: boolean }) => {
@@ -111,7 +122,10 @@ export function createTour({ sim, loop, reducedMotion, reveal, fallbackFocus, on
     if (!ran.has(i)) {
       ran.add(i);
       progress[i] = { met: false, startedAt: sim.state.t };
-      s.actions?.forEach((command) => sim.dispatch(command));
+      s.actions?.forEach((command) => {
+        if (command.type === 'reset') ownResets++;
+        sim.dispatch(command);
+      });
     }
     count.textContent = `Guided tour · ${i + 1} / ${steps.length}`;
     bar.style.transform = `scaleX(${((i + 1) / steps.length).toFixed(3)})`;
@@ -121,7 +135,8 @@ export function createTour({ sim, loop, reducedMotion, reveal, fallbackFocus, on
     setStatus();
     back.disabled = i === 0;
     next.textContent = i === steps.length - 1 ? 'Finish' : 'Next';
-    bringIntoView();
+    measureCard();
+    retarget();
     if (!reducedMotion) card.animate?.([{ opacity: 0, translate: '0 6px' }, { opacity: 1, translate: '0 0' }], { duration: 240, easing: 'cubic-bezier(0.2, 0, 0, 1)' });
     if (focus) title.focus({ preventScroll: true });
   };
@@ -133,14 +148,23 @@ export function createTour({ sim, loop, reducedMotion, reveal, fallbackFocus, on
 
   const onEvent = (event: SimEvent) => {
     const s = step();
+    if (event.type === 'reset' && ownResets > 0) {
+      ownResets--;
+      return;
+    }
     const p = progress[index];
     if (!p || p.met) return;
-    // A Reset from the console restarts sim time; restart this step's timeout with it.
-    if (event.type === 'reset') progress[index] = { met: false, startedAt: 0 };
+    // The visitor pressed Reset mid-step: the experiment this step started is gone, so say so
+    // rather than wait for an event that can't come.
+    if (event.type === 'reset') {
+      progress[index] = { met: false, startedAt: 0, interrupted: s.waitFor !== undefined };
+      setStatus();
+      return;
+    }
     if (!s.waitFor?.(event, sim.state)) return;
     progress[index] = { met: true, text: s.done?.(event, sim.state) ?? '' };
     setStatus();
-    if (s.doneTarget) bringIntoView();
+    if (s.doneTarget) retarget();
     if (s.autoAdvance) {
       const from = index;
       advanceTimer = setTimeout(() => {
@@ -151,9 +175,10 @@ export function createTour({ sim, loop, reducedMotion, reveal, fallbackFocus, on
     }
   };
 
+  // One layout read per frame (the target's rect), then writes only.
   const frame = (dtMs: number) => {
     setStatus();
-    const target = targetEl();
+    if (target && !target.isConnected) target = null;
     const rect = target?.getBoundingClientRect();
     const view = { width: document.documentElement.clientWidth, height: window.innerHeight };
     if (!rect || rect.width === 0 || rect.height === 0) {
@@ -176,7 +201,7 @@ export function createTour({ sim, loop, reducedMotion, reveal, fallbackFocus, on
       spot.style.width = `${box.width.toFixed(1)}px`;
       spot.style.height = `${box.height.toFixed(1)}px`;
     }
-    const pos = placeCard(box, { width: card.offsetWidth, height: card.offsetHeight }, view);
+    const pos = placeCard(box, cardSize, view);
     card.style.transform = `translate(${pos.left.toFixed(0)}px, ${pos.top.toFixed(0)}px)`;
   };
 
@@ -186,37 +211,49 @@ export function createTour({ sim, loop, reducedMotion, reveal, fallbackFocus, on
     end();
   };
 
+  const onResize = () => measureCard();
+
   next.addEventListener('click', () => go(index + 1));
   back.addEventListener('click', () => go(index - 1));
   skip.addEventListener('click', () => end());
 
-  function start(from: HTMLElement | null) {
-    if (running) end(false);
-    running = true;
-    opener = from;
-    progress = [];
-    ran = new Set();
-    box = null;
-    document.body.append(spot, card);
-    document.body.dataset.tour = 'on';
-    offBus = sim.bus.onAny(onEvent);
-    offLoop = loop.add((dt) => frame(dt));
-    document.addEventListener('keydown', onKey);
-    show(0, { focus: true });
-    frame(0);
-  }
-
-  function end(restoreFocus = true) {
-    if (!running) return;
+  /** Takes the tour off the page. */
+  const teardown = () => {
     running = false;
     if (advanceTimer !== null) clearTimeout(advanceTimer);
     advanceTimer = null;
     offBus?.();
     offLoop?.();
     document.removeEventListener('keydown', onKey);
+    window.removeEventListener('resize', onResize);
     spot.remove();
     card.remove();
     delete document.body.dataset.tour;
+  };
+
+  function start(from: HTMLElement | null) {
+    // A restart replaces the running tour in place: no focus hand-back, no onEnd (the URL stays #tour).
+    if (running) teardown();
+    running = true;
+    opener = from;
+    progress = [];
+    ran = new Set();
+    ownResets = 0;
+    box = null;
+    target = null;
+    document.body.append(spot, card);
+    document.body.dataset.tour = 'on';
+    offBus = sim.bus.onAny(onEvent);
+    offLoop = loop.add((dt) => frame(dt));
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onResize);
+    show(0, { focus: true });
+    frame(0);
+  }
+
+  function end(restoreFocus = true) {
+    if (!running) return;
+    teardown();
     if (restoreFocus) {
       const to = focusable(opener) ? opener : fallbackFocus();
       to?.focus({ preventScroll: true });

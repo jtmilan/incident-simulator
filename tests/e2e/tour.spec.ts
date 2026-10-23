@@ -96,9 +96,18 @@ test('#tour deep link starts the tour; Esc and Skip end it and hand focus back',
   await expect(page).toHaveURL(/#console$/);
   await expect(consoleTour(page)).toBeFocused();
 
-  // Restart from the console, then Skip.
+  // Start from the console; paused motion is called out instead of looking stuck.
   await consoleTour(page).click();
   await expect(page).toHaveURL(/#tour$/);
+  await page.getByRole('button', { name: 'Pause motion' }).click();
+  await page.getByRole('dialog', { name: 'Meet checkout-api' }).getByRole('button', { name: 'Next' }).click();
+  await expect(page.getByRole('dialog', { name: /kill a pod/ }).getByRole('status')).toContainText('Motion is paused');
+  await page.getByRole('button', { name: 'Pause motion' }).click();
+
+  // Restarting a running tour keeps the #tour URL; then Skip.
+  await consoleTour(page).click();
+  await expect(page).toHaveURL(/#tour$/);
+  await expect(page.getByRole('dialog', { name: 'Meet checkout-api' })).toContainText('1 / 6');
   await page.getByRole('dialog', { name: 'Meet checkout-api' }).getByRole('button', { name: 'Skip tour' }).click();
   await expect(tourCard(page)).toHaveCount(0);
   await expect(consoleTour(page)).toBeFocused();

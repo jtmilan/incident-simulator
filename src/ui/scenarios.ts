@@ -1,5 +1,5 @@
 import type { Command } from '../sim/types.ts';
-import { ACTIONS, type ActionId } from './view-models.ts';
+import { commandFor, type ActionId } from './view-models.ts';
 
 // Shareable links into the control room. #tour starts the guided tour; #scenario=<name> opens the
 // console and runs one chaos action. Names come from an allowlist: anything else just opens the console.
@@ -23,7 +23,5 @@ export function parseDeepLink(hash: string): DeepLink | null {
   if (hash === '#tour') return { kind: 'tour' };
   if (!hash.startsWith('#scenario=')) return null;
   const name = hash.slice('#scenario='.length);
-  if (!isScenario(name)) return { kind: 'console' };
-  const action = ACTIONS.find((a) => a.id === SCENARIOS[name]);
-  return action ? { kind: 'scenario', name, command: { ...action.command } } : { kind: 'console' };
+  return isScenario(name) ? { kind: 'scenario', name, command: commandFor(SCENARIOS[name]) } : { kind: 'console' };
 }

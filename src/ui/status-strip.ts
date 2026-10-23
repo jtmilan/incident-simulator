@@ -2,6 +2,7 @@ import type { Loop } from '../app/loop.ts';
 import { HEALTHY_ERROR_RATIO, HEALTHY_P99_MS } from '../sim/config.ts';
 import type { Simulation } from '../sim/simulation.ts';
 import type { MetricsPoint, SimState } from '../sim/types.ts';
+import { percent as pct } from './view-models.ts';
 
 export type StatusLevel = 'ok' | 'degraded' | 'paging';
 
@@ -11,7 +12,6 @@ export interface SystemStatus {
   text: string;
 }
 
-const pct = (x: number, digits = 0) => `${(x * 100).toFixed(digits)}%`;
 
 /** One line that says how the platform is doing right now, for the strip at the top of every page. */
 export function systemStatus(state: Readonly<SimState>, latest: MetricsPoint | null): SystemStatus {
@@ -26,10 +26,16 @@ export function systemStatus(state: Readonly<SimState>, latest: MetricsPoint | n
   return { level: 'ok', label: 'OK', text: `${head} · all systems normal` };
 }
 
-/** Keeps the status strip current from the shared clock, a few times a second, with textContent only. */
-export function mountStatusStrip(root: HTMLElement, { sim, loop }: { sim: Simulation; loop: Loop }): () => void {
-  const label = root.querySelector<HTMLElement>('[data-status-label]');
-  const text = root.querySelector<HTMLElement>('[data-status-text]');
+/**
+ * Keeps every status line (the strip at the top, the footer) current from the shared clock, a few
+ * times a second: one computation for all of them, textContent only.
+ */
+export function mountStatusStrip(roots: readonly HTMLElement[], { sim, loop }: { sim: Simulation; loop: Loop }): () => void {
+  const views = roots.map((root) => ({
+    root,
+    label: root.querySelector<HTMLElement>('[data-status-label]'),
+    text: root.querySelector<HTMLElement>('[data-status-text]'),
+  }));
   let last = '';
   let lastDraw = Number.NEGATIVE_INFINITY;
   return loop.add((_dt, now) => {
@@ -39,8 +45,10 @@ export function mountStatusStrip(root: HTMLElement, { sim, loop }: { sim: Simula
     const key = `${status.level}|${status.text}`;
     if (key === last) return;
     last = key;
-    root.dataset.level = status.level;
-    if (label) label.textContent = status.label;
-    if (text) text.textContent = status.text;
+    for (const { root, label, text } of views) {
+      root.dataset.level = status.level;
+      if (label) label.textContent = status.label;
+      if (text) text.textContent = status.text;
+    }
   });
 }

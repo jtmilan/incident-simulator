@@ -141,6 +141,21 @@ describe('Simulation', () => {
     expect(sim.state.chaos.some((r) => r.kind === 'injectErrors' && r.startedAt === 3_000)).toBe(true);
   });
 
+  it('dispatchAfter counts its delay from now, or from the start of a queued reset', () => {
+    const sim = new Simulation({ seed: 8 });
+    for (let i = 0; i < 90; i++) sim.advance(1_000); // advance() caps catch-up at 1 s per call
+    sim.dispatchAfter(1_200, { type: 'injectLatency', ms: 400, durationMs: 5_000 });
+    sim.advance(1_000);
+    sim.advance(300);
+    expect(sim.state.chaos.find((r) => r.kind === 'injectLatency')?.startedAt).toBe(91_200);
+
+    sim.dispatch({ type: 'reset' });
+    sim.dispatchAfter(1_200, { type: 'trafficSurge', multiplier: 2, durationMs: 5_000 });
+    sim.advance(1_000); // reset at the first tick, then 1.2 s into the new timeline
+    sim.advance(400);
+    expect(sim.state.chaos.find((r) => r.kind === 'trafficSurge')?.startedAt).toBe(1_200);
+  });
+
   it('gives the initial pods distinct names for every seed', () => {
     for (let seed = 1; seed <= 200; seed++) {
       const ids = new Simulation({ seed }).state.pods.map((p) => p.id);

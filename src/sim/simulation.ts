@@ -76,8 +76,13 @@ export class Simulation {
 
   /** Queue a command for the next tick. */
   dispatch(command: Command): void {
+    this.dispatchAfter(0, command);
+  }
+
+  /** Queue a command `delayMs` of sim time from now (deep links start their experiment a beat late). */
+  dispatchAfter(delayMs: number, command: Command): void {
     // After a queued reset, "now" means the start of the new timeline.
-    this.schedule(this.#queuedEpoch === this.#epoch ? this.#state.t : 0, command);
+    this.schedule((this.#queuedEpoch === this.#epoch ? this.#state.t : 0) + Math.max(delayMs, 0), command);
   }
 
   /** Queue a command for a sim time; it applies on the first tick at or after `atMs` (tours, deep links, tests). */

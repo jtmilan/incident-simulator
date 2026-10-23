@@ -109,6 +109,12 @@ describe('statusLine', () => {
     expect(statusLine(kill, { met: true, text: '✓ Healed.' }, 5_000)).toBe('✓ Healed.');
   });
 
+  it('says when paused motion is holding the experiment, and when a Reset cleared it', () => {
+    expect(statusLine(kill, { met: false, startedAt: 0 }, 1_000, true)).toMatch(/Motion is paused/);
+    expect(statusLine(kill, { met: false, startedAt: 0, interrupted: true }, 1_000)).toMatch(/scenario was reset/);
+    expect(statusLine(page, { met: false, startedAt: 0 }, 1_000, true)).toBe('');
+  });
+
   it('never leaves the visitor stuck: past the timeout it invites them on', () => {
     expect(statusLine(kill, { met: false, startedAt: 0 }, kill.timeoutMs! + 100)).toMatch(/Continue whenever you like/);
   });

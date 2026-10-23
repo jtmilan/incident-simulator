@@ -10,7 +10,7 @@ import {
   ZONES,
 } from '../sim/config.ts';
 import type { Command, SimEvent, SimState } from '../sim/types.ts';
-import { ACTIONS, type ActionId } from './view-models.ts';
+import { commandFor, percent as pct, wholeSeconds as secs } from './view-models.ts';
 
 // The guided tour as data: what each step points at, says, does, and waits for. No DOM here, so the
 // whole script can be run against a real Simulation in tests.
@@ -37,10 +37,7 @@ export interface TourStep {
   timeoutMs?: number;
 }
 
-const command = (id: ActionId): Command => ({ ...ACTIONS.find((a) => a.id === id)!.command });
-const secs = (ms: number) => Math.round(ms / 1_000);
-const pct = (x: number, digits = 0) => `${(x * 100).toFixed(digits)}%`;
-const errors = command('injectErrors');
+const errors = commandFor('injectErrors');
 const errorShare = errors.type === 'injectErrors' ? pct(errors.ratio) : '';
 const errorFor = errors.type === 'injectErrors' ? secs(errors.durationMs) : 0;
 
@@ -62,7 +59,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
     body:
       'The tour just deleted a Ready pod, as kubectl delete pod would. The ReplicaSet creates a replacement, which takes traffic once its readiness probe passes. ' +
       'The other pods carry the load meanwhile, so the error budget barely moves and nobody is paged.',
-    actions: [command('killPod')],
+    actions: [commandFor('killPod')],
     waitFor: (e) => e.type === 'postmortemReady',
     waiting: 'Waiting for the replacement pod to pass its readiness probe…',
     done: (e) =>
@@ -123,12 +120,16 @@ export const TOUR_STEPS: readonly TourStep[] = [
   },
 ];
 
-export type StepProgress = { met: false; startedAt: number } | { met: true; text: string };
+export type StepProgress =
+  | { met: false; startedAt: number; interrupted?: boolean }
+  | { met: true; text: string };
 
-/** The status line under a step's body: waiting, done, or taking longer than expected. */
-export function statusLine(step: TourStep, progress: StepProgress, now: number): string {
+/** The status line under a step's body: waiting, done, paused, interrupted or taking longer than expected. */
+export function statusLine(step: TourStep, progress: StepProgress, now: number, paused = false): string {
   if (!step.waitFor) return '';
   if (progress.met) return progress.text;
+  if (progress.interrupted) return 'The scenario was reset, which cleared this experiment. Continue whenever you like.';
+  if (paused) return 'Motion is paused. Press "Pause motion" again to let the experiment run.';
   if (step.timeoutMs !== undefined && now - progress.startedAt > step.timeoutMs) {
     return 'This is taking longer than usual. Continue whenever you like.';
   }
