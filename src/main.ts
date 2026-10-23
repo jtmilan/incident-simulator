@@ -14,6 +14,7 @@ import type { SceneHandle } from './scene/mount.ts';
 import { Simulation } from './sim/simulation.ts';
 import { mountConsole } from './ui/console.ts';
 import { mountHeadline } from './ui/headline.ts';
+import { mountMobileTabs } from './ui/mobile-tabs.ts';
 import { ModeController, parseMode, type Mode } from './ui/modes.ts';
 import { mountStatusStrip } from './ui/status-strip.ts';
 
@@ -71,6 +72,14 @@ const timelineRegion = region('timeline');
 const viewportRegion = region('viewport');
 if (chaosRegion && metricsRegion && timelineRegion && viewportRegion) {
   mountConsole({ chaos: chaosRegion, metrics: metricsRegion, timeline: timelineRegion, viewport: viewportRegion }, { sim, loop });
+  const grid = document.querySelector<HTMLElement>('.console-grid');
+  if (grid) {
+    mountMobileTabs(grid, [
+      { id: 'chaos', label: 'Chaos', panel: chaosRegion },
+      { id: 'health', label: 'Health', panel: metricsRegion },
+      { id: 'timeline', label: 'Timeline', panel: timelineRegion },
+    ]);
+  }
 }
 
 // ---- Hero ⇄ console ----

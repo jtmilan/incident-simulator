@@ -1,6 +1,7 @@
 import type { Loop } from '../app/loop.ts';
 import type { Simulation } from '../sim/simulation.ts';
 import type { Postmortem } from '../sim/types.ts';
+import { configButton, createConfigDialog, type ConfigKey } from './config-dialog.ts';
 import { createSparkline } from './sparkline.ts';
 import {
   ACTIONS,
@@ -33,10 +34,26 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
   return node;
 }
 
-function section(title: string, tour?: string): HTMLElement {
+let openConfig: ((key: ConfigKey, opener: HTMLElement) => void) | null = null;
+
+/** A "</> real config" button that opens the manifests behind a panel. */
+function realConfig(key: ConfigKey): HTMLButtonElement {
+  const button = configButton();
+  button.dataset.config = key;
+  button.addEventListener('click', () => {
+    openConfig ??= createConfigDialog();
+    openConfig(key, button);
+  });
+  return button;
+}
+
+function section(title: string, tour?: string, config?: ConfigKey): HTMLElement {
   const block = el('section', 'block');
   if (tour) block.dataset.tour = tour;
-  block.append(el('h4', 'block-title', title));
+  const heading = el('div', 'block-head');
+  heading.append(el('h4', 'block-title', title));
+  if (config) heading.append(realConfig(config));
+  block.append(heading);
   return block;
 }
 
@@ -92,10 +109,12 @@ export function mountConsole(regions: ConsoleRegions, { sim, loop }: { sim: Simu
   reset.type = 'button';
   reset.addEventListener('click', () => sim.dispatch({ type: 'reset' }));
   controls.append(recover, speed, reset);
-  regions.chaos.append(actions, controls);
+  const chaosFooter = el('div', 'panel-foot');
+  chaosFooter.append(realConfig('workload'));
+  regions.chaos.append(actions, controls, chaosFooter);
 
   // ---- Service health ----
-  const slo = section('Error budget', 'slo');
+  const slo = section('Error budget', 'slo', 'slo');
   const ring = el('div', 'ring');
   const svg = document.createElementNS(SVG, 'svg');
   svg.setAttribute('viewBox', '0 0 80 80');
@@ -118,7 +137,7 @@ export function mountConsole(regions: ConsoleRegions, { sim, loop }: { sim: Simu
   const burn = el('p', 'block-line');
   slo.append(ring, sloCaption, burn);
 
-  const signals = section('Signals', 'signals');
+  const signals = section('Signals', 'signals', 'promql');
   interface SignalDef {
     key: 'rps' | 'p99' | 'errorRatio' | 'cpu';
     label: string;
@@ -145,7 +164,7 @@ export function mountConsole(regions: ConsoleRegions, { sim, loop }: { sim: Simu
   const hold = el('p', 'block-note');
   podsBlock.append(pods, hold);
 
-  const dbBlock = section('Postgres', 'db');
+  const dbBlock = section('Postgres', 'db', 'database');
   const db = el('p', 'block-line pre');
   dbBlock.append(db);
 

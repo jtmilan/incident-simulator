@@ -49,3 +49,28 @@ test('the console runs the whole story: kill, page, recover, postmortem', async 
   expect(axe.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => `${v.id}: ${v.help}`)).toEqual([]);
   expect(errors).toEqual([]);
 });
+
+test('"real config" opens the production manifests and returns focus on Esc', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(consoleEntry);
+  const opener = page.getByRole('complementary', { name: 'Service health' }).locator('[data-config="slo"]');
+  await opener.click();
+  const dialog = page.getByRole('dialog', { name: /SLO: multi-window, multi-burn-rate alerting/ });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('slo:sli_error:ratio_rate1h > (14.4 * 0.001)');
+  await expect(dialog).toContainText('severity: page');
+
+  const axe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+  expect(axe.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => `${v.id}: ${v.help}`)).toEqual([]);
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
+
+  await page.getByRole('complementary', { name: 'Chaos experiments' }).locator('[data-config="workload"]').click();
+  await expect(page.getByRole('dialog')).toContainText('initialDelaySeconds: 3');
+  await expect(page.getByRole('dialog')).toContainText('stabilizationWindowSeconds: 300');
+  await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click();
+  await page.getByRole('complementary', { name: 'Service health' }).locator('[data-config="database"]').click();
+  await expect(page.getByRole('dialog')).toContainText('failoverDelay: 0');
+});

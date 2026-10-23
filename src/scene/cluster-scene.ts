@@ -502,7 +502,7 @@ function buildScene(
     camera.aspect = aspect;
     // Narrow (portrait) screens pull the camera back so all three nodes stay in frame; the console
     // pulls back a touch more because the scene shares the screen with panels.
-    const pull = (aspect < 1 ? 1.7 : aspect < 1.4 ? 1.2 : 1) * (1 + 0.12 * framing);
+    const pull = (aspect < 0.6 ? 2.1 : aspect < 1 ? 1.7 : aspect < 1.4 ? 1.2 : 1) * (1 + 0.12 * framing);
     cameraBase.set(0, 11 * pull, 23 * pull);
     // Hero: the copy owns the left side, so the cluster sits right. Console: centred, and lifted
     // so the ingress clears the timeline panel along the bottom.

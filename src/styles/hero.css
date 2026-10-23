@@ -260,3 +260,10 @@ body[data-mode='opening'] .glow {
     opacity: 0;
   }
 }
+
+@media (max-width: 40rem) {
+  /* Keep the status strip to one line on phones so the console header sits right below it. */
+  .strip-meta {
+    display: none;
+  }
+}
