@@ -22,6 +22,7 @@ import {
   PlaneGeometry,
   Scene,
   ShaderMaterial,
+  SphereGeometry,
   SRGBColorSpace,
   TorusGeometry,
   Vector2,
@@ -35,8 +36,10 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import type { Simulation } from '../sim/simulation.ts';
 import type { Pod } from '../sim/types.ts';
-import { DB_CENTRES, NODE_CENTRES, PENDING_AREA, PLATFORM_TOP, SlotBook, slotPosition } from './layout.ts';
+import { createEffects } from './effects.ts';
+import { DB_CENTRES, INGRESS, NODE_CENTRES, PENDING_AREA, PLATFORM_TOP, SlotBook, slotPosition, type Vec3 } from './layout.ts';
 import { heatColor, PALETTE } from './palette.ts';
+import { createParticles, particlePosition, stepParticles } from './particles.ts';
 import type { Quality } from './quality.ts';
 
 export interface ClusterScene {
@@ -65,6 +68,20 @@ interface PodVisual {
   color: Color;
   seed: number;
   gone: boolean;
+  /** Seconds since the pod became Ready (drives the respawn pop), or null. */
+  popAge: number | null;
+}
+
+/** Respawn pop: 0.26 s ease-out to 1.07, then 0.5 s ease-in-out back to 1. */
+function popScale(age: number | null): number {
+  if (age === null) return 1;
+  if (age < 0.26) {
+    const k = age / 0.26;
+    return 1 + 0.07 * (1 - (1 - k) * (1 - k));
+  }
+  const k = Math.min((age - 0.26) / 0.5, 1);
+  const inOut = k < 0.5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2;
+  return 1.07 - 0.07 * inOut;
 }
 
 const GRID_VERTEX = /* glsl */ `
@@ -195,6 +212,22 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
     composer.addPass(new OutputPass());
   }
 
+  // Traffic particles, sized once to the quality budget (none under reduced motion).
+  const particleCapacity = quality.drift ? quality.particles : 0;
+  const particleModel = createParticles(particleCapacity);
+  const particleMaterial = track(new MeshBasicMaterial({ toneMapped: false }));
+  const particleMesh = new InstancedMesh(track(new SphereGeometry(0.075, 8, 6)), particleMaterial, Math.max(particleCapacity, 1));
+  particleMesh.instanceMatrix.setUsage(DynamicDrawUsage);
+  particleMesh.count = 0;
+  scene.add(particleMesh);
+  const okParticle = new Color(PALETTE.accent).multiplyScalar(1.9);
+  const errorParticle = new Color(PALETTE.crit).multiplyScalar(1.35);
+  const at: Vec3 = { x: 0, y: 0, z: 0 };
+
+  const effects = createEffects(scene, quality.drift);
+  const edgeIdle = new Color(PALETTE.accent).multiplyScalar(1.3);
+  const edgeAlert = new Color(PALETTE.crit).multiplyScalar(1.6);
+
   const slots = new SlotBook();
   const visuals = new Map<string, PodVisual>();
   const dummy = new Object3D();
@@ -224,7 +257,7 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
       const target = targetFor(pod, assignment, index);
       let visual = visuals.get(pod.id);
       if (!visual) {
-        visual = { position: target.clone(), scale: 0, color: new Color(PALETTE.muted), seed: seedCounter++ * 1.618, gone: false };
+        visual = { position: target.clone(), scale: 0, color: new Color(PALETTE.muted), seed: seedCounter++ * 1.618, gone: false, popAge: null };
         visuals.set(pod.id, visual);
       }
       const look = STATUS_LOOK[pod.status];
@@ -232,6 +265,7 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
       visual.position.y = MathUtils.damp(visual.position.y, target.y, DAMP, dt);
       visual.position.z = MathUtils.damp(visual.position.z, target.z, DAMP, dt);
       visual.scale = MathUtils.damp(visual.scale, look.scale, DAMP, dt);
+      if (visual.popAge !== null) visual.popAge = visual.popAge > 0.76 ? null : visual.popAge + dt;
       const heat = pod.status === 'Ready' ? heatColor(cpu) : pod.status === 'Pending' ? { r: 0.5, g: 0.55, b: 0.6 } : heatColor(0.45);
       scratch.setRGB(heat.r * look.brightness, heat.g * look.brightness, heat.b * look.brightness, SRGBColorSpace);
       visual.color.lerp(scratch, 1 - Math.exp(-DAMP * dt));
@@ -249,7 +283,7 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
       if (i >= MAX_PODS) break;
       const bob = quality.drift && !visual.gone ? Math.sin(time * 1.4 + visual.seed) * 0.05 : 0;
       dummy.position.set(visual.position.x, visual.position.y + bob, visual.position.z);
-      dummy.scale.setScalar(Math.max(visual.scale, 0.0001));
+      dummy.scale.setScalar(Math.max(visual.scale * popScale(visual.popAge), 0.0001));
       dummy.updateMatrix();
       pods.setMatrixAt(i, dummy.matrix);
       pods.setColorAt(i, visual.color);
@@ -259,11 +293,59 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
     pods.instanceMatrix.needsUpdate = true;
     if (pods.instanceColor) pods.instanceColor.needsUpdate = true;
 
-    // Nodes dim when not Ready (node drain, Phase 5).
+    // Node edges: dim when the node isn't Ready (drain, Phase 5); pulse red while a page fires.
+    const paging = state.alerts.some((a) => a.severity === 'page' && a.state === 'firing');
+    const pulse = 0.5 + 0.5 * Math.sin(time * 6);
     for (const node of state.nodes) {
       const material = edgeMaterials.get(node.id);
-      if (material) material.opacity = MathUtils.damp(material.opacity, node.ready ? 0.55 : 0.12, DAMP, dt);
+      if (!material) continue;
+      material.opacity = MathUtils.damp(material.opacity, node.ready ? 0.55 + (paging ? 0.35 * pulse : 0) : 0.12, DAMP, dt);
+      scratch.copy(paging ? edgeAlert : edgeIdle);
+      material.color.lerp(scratch, 1 - Math.exp(-DAMP * dt));
     }
+
+    // Traffic: density from rps, speed from p99, red for errors, DB legs follow the primary.
+    if (particleCapacity > 0) {
+      const last = state.traffic.last;
+      const readyTargets: Vec3[] = [];
+      for (const pod of state.pods) {
+        const v = visuals.get(pod.id);
+        if (pod.status === 'Ready' && v) readyTargets.push({ x: v.position.x, y: v.position.y, z: v.position.z });
+      }
+      const primaryInstance = state.db.instances.find((x) => x.role === 'primary');
+      const replicaInstance = state.db.instances.find((x) => x.role === 'replica');
+      const dbPoint = (id: string | undefined) => {
+        const c = (id && DB_CENTRES[id]) || DB_CENTRES['db-1']!;
+        return { x: c.x, y: 1.3, z: c.z };
+      };
+      stepParticles(particleModel, dt, {
+        rps: sim.latest?.rps ?? last?.rps ?? 400,
+        p99: last?.p99 ?? 140,
+        errorRatio: last?.errorRatio ?? 0,
+        writeFailureRatio: state.db.writeFailureRatio,
+        readyTargets,
+        ingress: INGRESS,
+        primary: dbPoint(primaryInstance?.id),
+        replica: dbPoint(replicaInstance?.id),
+      });
+      const bunching = Math.min(Math.max(((last?.p99 ?? 140) - 250) / 700, 0), 0.6);
+      let n = 0;
+      for (const particle of particleModel.particles) {
+        if (!particle.alive) continue;
+        particlePosition(particleModel, particle, at, bunching);
+        dummy.position.set(at.x, at.y, at.z);
+        dummy.rotation.set(0, 0, 0);
+        dummy.scale.setScalar(particle.leg === 'bounce' || particle.leg === 'fizzle' ? 1 - particle.t * 0.6 : 1);
+        dummy.updateMatrix();
+        particleMesh.setMatrixAt(n, dummy.matrix);
+        particleMesh.setColorAt(n, particle.error ? errorParticle : okParticle);
+        n++;
+      }
+      particleMesh.count = n;
+      particleMesh.instanceMatrix.needsUpdate = true;
+      if (particleMesh.instanceColor) particleMesh.instanceColor.needsUpdate = true;
+    }
+    effects.update(dt);
 
     // Database: primary glows, replica idles, a down instance goes dark; the ring follows the primary.
     const db = state.db;
@@ -316,7 +398,27 @@ export function createClusterScene(canvas: HTMLCanvasElement, sim: Simulation, q
     }
   }
 
+  // One-shot animations come from simulator events.
+  const unsubscribe = [
+    sim.bus.on('chaosStarted', (e) => {
+      if (e.run.kind !== 'killPod' || !e.run.target) return;
+      const visual = visuals.get(e.run.target);
+      if (!visual) return;
+      effects.shatter(visual.position.clone(), visual.color.clone());
+      visual.scale = quality.drift ? 0.02 : visual.scale;
+    }),
+    sim.bus.on('podPhaseChanged', (e) => {
+      if (e.to !== 'Ready') return;
+      const visual = visuals.get(e.podId);
+      if (!visual) return;
+      visual.popAge = quality.drift ? 0 : null;
+      effects.flash(visual.position.clone());
+    }),
+  ];
+
   function dispose() {
+    unsubscribe.forEach((off) => off());
+    effects.dispose();
     disposables.forEach((d) => d.dispose());
     composer?.dispose();
     renderer.dispose();

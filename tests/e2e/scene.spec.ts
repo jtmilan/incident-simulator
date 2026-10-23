@@ -60,3 +60,59 @@ test('keeps the page working when WebGL is unavailable', async ({ page }) => {
   await expect(page.locator('canvas.scene')).toHaveCount(0);
   expect(crashes).toEqual([]);
 });
+
+test('action gallery: every chaos action has its own look', async ({ page }, testInfo) => {
+  test.slow();
+  const errors: string[] = [];
+  page.on('pageerror', (err) => errors.push(err.message));
+  page.on('console', (msg) => msg.type() === 'error' && errors.push(msg.text()));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(withDebug);
+  await expect(page.locator('body')).toHaveClass(/has-scene/, { timeout: 15_000 });
+  await page.waitForTimeout(2_000);
+
+  const shot = (name: string) => page.screenshot({ path: testInfo.outputPath(`action-${name}.png`) });
+  const reset = async () => {
+    await sim(page, { type: 'reset' });
+    await sim(page, { type: 'setSpeed', speed: 1 });
+    await page.waitForTimeout(1_500);
+  };
+
+  // Kill: shards burst within the 0.42 s shatter window.
+  await sim(page, { type: 'killPod' });
+  await page.waitForTimeout(140);
+  await shot('kill-shatter');
+  await sim(page, { type: 'setSpeed', speed: 5 });
+  await page.waitForTimeout(2_500);
+  await shot('kill-healed');
+
+  // 5xx at 20%: red bounces, then node edges pulse while the page fires.
+  await reset();
+  await sim(page, { type: 'setSpeed', speed: 5 });
+  await sim(page, { type: 'injectErrors', ratio: 0.2, durationMs: 60_000 });
+  await page.waitForFunction(
+    () =>
+      (window as unknown as { __ccr: { sim: { state: { alerts: { name: string; state: string }[] } } } }).__ccr.sim.state.alerts.some(
+        (a) => a.name === 'HighErrorBudgetBurn' && a.state === 'firing',
+      ),
+    null,
+    { timeout: 15_000 },
+  );
+  await sim(page, { type: 'setSpeed', speed: 1 });
+  await page.waitForTimeout(600);
+  await shot('errors');
+
+  // Latency: slow, bunched traffic.
+  await reset();
+  await sim(page, { type: 'injectLatency', ms: 400, durationMs: 60_000 });
+  await page.waitForTimeout(2_500);
+  await shot('latency');
+
+  // DB failover: writes bounce red off the dead primary.
+  await reset();
+  await sim(page, { type: 'failoverDatabase' });
+  await page.waitForTimeout(2_500);
+  await shot('failover-primary-down');
+
+  expect(errors).toEqual([]);
+});
