@@ -1,8 +1,21 @@
 import { createBus, type Bus } from './bus.ts';
 import { initialCluster, killPod, reconcileCluster } from './cluster.ts';
 import { MAX_CATCH_UP_MS, TICK_MS, TIMELINE_LIMIT } from './config.ts';
+import { initialHpa, reconcileHpa } from './hpa.ts';
 import { createRng, type Rng } from './rng.ts';
-import type { ChaosRun, Command, SimEvent, SimState, Speed, TickContext, TimelineEvent } from './types.ts';
+import { initialMetrics, initialTraffic, recordMetrics, stepTraffic } from './traffic.ts';
+import type { ChaosKind, ChaosRun, Command, MetricsPoint, SimEvent, SimState, Speed, TickContext, TimelineEvent } from './types.ts';
+
+const CHAOS_LABEL: Record<ChaosKind, string> = {
+  killPod: 'Kill pod',
+  injectErrors: 'Error injection',
+  injectLatency: 'Latency injection',
+  trafficSurge: 'Traffic surge',
+  failoverDatabase: 'Database failover',
+  drainNode: 'Node drain',
+};
+
+const seconds = (ms: number) => `${Math.round(ms / 1_000)} s`;
 
 interface Scheduled {
   at: number;
@@ -38,6 +51,11 @@ export class Simulation {
     return this.#speed;
   }
 
+  /** Newest 1 s metrics point, or null in the first second. */
+  get latest(): MetricsPoint | null {
+    return this.#state.metrics.series.at(-1) ?? null;
+  }
+
   /** Queue a command for the next tick. */
   dispatch(command: Command): void {
     this.schedule(this.#state.t, command);
@@ -67,6 +85,9 @@ export class Simulation {
       seed,
       ...initialCluster(this.#rng, 0),
       chaos: [],
+      traffic: initialTraffic(),
+      metrics: initialMetrics(),
+      hpa: initialHpa(),
       timeline: [],
       counters: { pod: 0, chaos: 0, timeline: 0 },
     };
@@ -84,6 +105,10 @@ export class Simulation {
     }
 
     reconcileCluster(state, ctx);
+    const traffic = stepTraffic(state, ctx);
+    recordMetrics(state, ctx, traffic);
+    // The HPA reads the last full metrics point, like a metrics-server scrape, not a single tick.
+    reconcileHpa(state, ctx, this.latest?.cpu ?? traffic.cpu, traffic.readyPods);
     this.#expireChaos(ctx);
     return this.#flush();
   }
@@ -121,6 +146,14 @@ export class Simulation {
       case 'killPod':
         killPod(this.#state, ctx, command.podId);
         return;
+      case 'trafficSurge':
+        ctx.startChaos('trafficSurge', { durationMs: command.durationMs, intensity: command.multiplier });
+        ctx.log('chaos', 'warn', `Traffic surge ×${command.multiplier} for ${seconds(command.durationMs)}`);
+        return;
+      case 'injectLatency':
+        ctx.startChaos('injectLatency', { durationMs: command.durationMs, intensity: command.ms });
+        ctx.log('chaos', 'warn', `Injected +${command.ms} ms latency for ${seconds(command.durationMs)}`);
+        return;
       case 'recoverAll': {
         const active = this.#state.chaos.filter((run) => run.endsAt > ctx.t);
         active.forEach((run) => (run.endsAt = ctx.t));
@@ -152,7 +185,10 @@ export class Simulation {
     const ended = state.chaos.filter((run) => run.endsAt <= ctx.t);
     if (ended.length === 0) return;
     state.chaos = state.chaos.filter((run) => run.endsAt > ctx.t);
-    ended.forEach((run) => ctx.emit({ type: 'chaosEnded', t: ctx.t, run: { ...run } }));
+    ended.forEach((run) => {
+      ctx.emit({ type: 'chaosEnded', t: ctx.t, run: { ...run } });
+      if (run.endsAt > run.startedAt) ctx.log('chaos', 'info', `${CHAOS_LABEL[run.kind]} ended`);
+    });
   }
 
   #flush(): SimEvent[] {

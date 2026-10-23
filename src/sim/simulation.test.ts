@@ -10,6 +10,8 @@ function runInChunks(sim: Simulation, totalMs: number, chunkMs: number) {
 const fingerprint = (sim: Simulation) => ({
   timeline: sim.state.timeline.map((e) => `${e.t}|${e.source}|${e.message}`),
   pods: sim.state.pods.map((p) => `${p.id}|${p.status}|${p.nodeId}`),
+  metrics: sim.state.metrics.series,
+  replicas: sim.state.deployment.desiredReplicas,
 });
 
 describe('Simulation', () => {
@@ -19,6 +21,8 @@ describe('Simulation', () => {
       sim.schedule(10_000, { type: 'killPod' });
       sim.schedule(40_000, { type: 'killPod' });
       sim.schedule(41_000, { type: 'killPod' });
+      sim.schedule(50_000, { type: 'trafficSurge', multiplier: 3, durationMs: 40_000 });
+      sim.schedule(60_000, { type: 'injectLatency', ms: 300, durationMs: 20_000 });
       return sim;
     };
     const smooth = make();
@@ -34,7 +38,8 @@ describe('Simulation', () => {
     expect(smooth.state.t).toBe(120_000);
     expect(fingerprint(smooth)).toEqual(fingerprint(choppy));
     expect(smoothEvents).toEqual(choppyEvents);
-    expect(smoothEvents.filter((t) => t === 'chaosStarted')).toHaveLength(3);
+    expect(smoothEvents.filter((t) => t === 'chaosStarted')).toHaveLength(5);
+    expect(smoothEvents).toContain('scaled');
   });
 
   it('applies a dispatched command on the next 100 ms tick boundary', () => {

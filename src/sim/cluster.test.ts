@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { K8S_NAME_ALPHABET, TICK_MS } from './config.ts';
 import { initialCluster, killPod, reconcileCluster } from './cluster.ts';
+import { initialHpa } from './hpa.ts';
 import { createRng, type Rng } from './rng.ts';
+import { initialMetrics, initialTraffic } from './traffic.ts';
 import type { ChaosRun, SimEvent, SimState, TickContext, TimelineEvent } from './types.ts';
 
 // A bare-bones tick loop so the reconciler can be tested without the Simulation class.
@@ -12,6 +14,9 @@ function harness(seed: number) {
     seed,
     ...initialCluster(rng, 0),
     chaos: [],
+    traffic: initialTraffic(),
+    metrics: initialMetrics(),
+    hpa: initialHpa(),
     timeline: [],
     counters: { pod: 0, chaos: 0, timeline: 0 },
   };
