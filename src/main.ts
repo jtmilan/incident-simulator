@@ -4,6 +4,7 @@ import '@fontsource/jetbrains-mono/latin-400.css';
 import './styles/tokens.css';
 import './styles/base.css';
 
+import { isSoftwareRenderer, webglRendererName } from './app/gpu.ts';
 import { createLoop } from './app/loop.ts';
 import { goatCounterCode, injectGoatCounter } from './config/analytics.ts';
 import { getBuildInfo } from './config/build-info.ts';
@@ -59,14 +60,26 @@ const whenIdle = (fn: () => void): void => {
 const loadScene = () =>
   whenIdle(() => {
     import('./scene/mount.ts')
-      .then(({ mountScene }) => {
-        if (mountScene({ sim, loop })) loop.start();
+      .then(({ mountScene }) => mountScene({ sim, loop }))
+      .then((mounted) => {
+        if (mounted) loop.start();
       })
       // A failed chunk load (e.g. a stale tab after a redeploy) leaves the static layout in place.
       .catch((error: unknown) => console.warn('[scene] not loaded', error));
   });
-if (document.readyState === 'complete') loadScene();
-else window.addEventListener('load', loadScene, { once: true });
+// With WebGL on the CPU (no GPU), wait for the visitor to engage before spending main-thread time
+// on a decorative scene; with a GPU, load it straight away.
+const ENGAGE = ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart', 'scroll'] as const;
+const startScene = () => {
+  if (!isSoftwareRenderer(webglRendererName())) return loadScene();
+  const go = () => {
+    ENGAGE.forEach((type) => window.removeEventListener(type, go));
+    loadScene();
+  };
+  ENGAGE.forEach((type) => window.addEventListener(type, go, { passive: true }));
+};
+if (document.readyState === 'complete') startScene();
+else window.addEventListener('load', startScene, { once: true });
 
 // ?debug loads a plain-text simulator console below the hero. Code-split, so normal visitors never download it.
 if (debug) {

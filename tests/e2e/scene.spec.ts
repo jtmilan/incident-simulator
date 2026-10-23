@@ -17,6 +17,7 @@ test('renders the live cluster and follows chaos in real time', async ({ page },
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(withDebug);
+  await page.mouse.move(400, 300); // headless Chromium renders WebGL on the CPU: the scene loads on engagement
   await expect(page.locator('canvas.scene')).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('body')).toHaveClass(/has-scene/);
   await page.waitForTimeout(1_500);
@@ -68,6 +69,7 @@ test('action gallery: every chaos action has its own look', async ({ page }, tes
   page.on('console', (msg) => msg.type() === 'error' && errors.push(msg.text()));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(withDebug);
+  await page.mouse.move(400, 300);
   await expect(page.locator('body')).toHaveClass(/has-scene/, { timeout: 15_000 });
   await page.waitForTimeout(2_000);
 

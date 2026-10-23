@@ -16,6 +16,7 @@ import {
   MathUtils,
   Mesh,
   MeshBasicMaterial,
+  MeshLambertMaterial,
   MeshStandardMaterial,
   Object3D,
   PerspectiveCamera,
@@ -46,6 +47,10 @@ export interface ClusterScene {
   update(dtMs: number, nowMs: number): void;
   render(): void;
   resize(width: number, height: number): void;
+  /** Shed one level of quality (bloom, then resolution, then particles). False when nothing is left. */
+  degrade(): boolean;
+  /** Compile every shader up front, in its own task, instead of inside the first frame. */
+  prewarm(): void;
   dispose(): void;
 }
 
@@ -170,7 +175,13 @@ function buildScene(
 
   // Node platforms with a glowing top edge.
   const platformGeometry = track(new RoundedBoxGeometry(3.3, PLATFORM_TOP, 3.3, 4, 0.1));
-  const platformMaterial = track(new MeshStandardMaterial({ color: PALETTE.panel, roughness: 0.55, metalness: 0.25 }));
+  // Weak and CPU-rendered devices get Lambert shading: far cheaper to compile and to fill than PBR.
+  const lite = quality.tier === 'software' || quality.tier === 'low';
+  const surface = (params: { color: number; emissive?: Color; emissiveIntensity?: number; roughness: number; metalness: number }) =>
+    lite
+      ? new MeshLambertMaterial({ color: params.color, emissive: params.emissive ?? new Color(0), emissiveIntensity: params.emissiveIntensity ?? 1 })
+      : new MeshStandardMaterial(params);
+  const platformMaterial = track(surface({ color: PALETTE.panel, roughness: 0.55, metalness: 0.25 }));
   const edgeGeometry = track(new EdgesGeometry(track(new BoxGeometry(3.3, 0.001, 3.3))));
   const edgeMaterials = new Map<string, LineBasicMaterial>();
   for (const [nodeId, centre] of Object.entries(NODE_CENTRES)) {
@@ -194,10 +205,10 @@ function buildScene(
   dbPlatform.position.set(0, 0.15, DB_CENTRES['db-1']!.z);
   scene.add(dbPlatform);
   const diskGeometry = track(new CylinderGeometry(0.75, 0.75, 0.32, 40));
-  const dbMaterials = new Map<string, MeshStandardMaterial>();
+  const dbMaterials = new Map<string, MeshLambertMaterial | MeshStandardMaterial>();
   for (const [id, centre] of Object.entries(DB_CENTRES)) {
     const material = track(
-      new MeshStandardMaterial({ color: PALETTE.panel, emissive: new Color(PALETTE.accent), emissiveIntensity: 0.4, roughness: 0.4, metalness: 0.3 }),
+      surface({ color: PALETTE.panel, emissive: new Color(PALETTE.accent), emissiveIntensity: 0.4, roughness: 0.4, metalness: 0.3 }),
     );
     const stack = new Group();
     for (let i = 0; i < 3; i++) {
@@ -286,7 +297,7 @@ function buildScene(
   };
 
   function update(dtMs: number, nowMs: number) {
-    const dt = Math.min(dtMs, 50) / 1_000;
+    const dt = Math.min(dtMs, 100) / 1_000;
     const state = sim.state;
     const cpu = sim.latest?.cpu ?? 0.45;
     const assignment = slots.assign(state.pods);
@@ -379,6 +390,7 @@ function buildScene(
       let n = 0;
       for (const particle of particleModel.particles) {
         if (!particle.alive) continue;
+        if (n >= particleLimit) break;
         particlePosition(particleModel, particle, at, bunching);
         dummy.position.set(at.x, at.y, at.z);
         dummy.rotation.set(0, 0, 0);
@@ -422,12 +434,39 @@ function buildScene(
     camera.lookAt(lookAt);
   }
 
+  let bloomEnabled = composer !== null;
+  let particleLimit = particleCapacity;
+  let size = { width: 1, height: 1 };
+
   function render() {
-    if (composer) composer.render();
+    if (composer && bloomEnabled) composer.render();
     else renderer.render(scene, camera);
   }
 
+  function prewarm() {
+    renderer.compile(scene, camera);
+  }
+
+  function degrade(): boolean {
+    if (bloomEnabled) {
+      bloomEnabled = false;
+      return true;
+    }
+    const ratio = renderer.getPixelRatio();
+    if (ratio > 0.4) {
+      renderer.setPixelRatio(Math.max(ratio * 0.7, 0.4));
+      resize(size.width, size.height);
+      return true;
+    }
+    if (particleLimit > 40) {
+      particleLimit = Math.floor(particleLimit / 2);
+      return true;
+    }
+    return false;
+  }
+
   function resize(width: number, height: number) {
+    size = { width, height };
     const aspect = width / Math.max(height, 1);
     camera.aspect = aspect;
     // Narrow (portrait) screens pull the camera back so all three nodes stay in frame.
@@ -480,5 +519,5 @@ function buildScene(
     renderer.dispose();
   }
 
-  return { update, render, resize, dispose };
+  return { update, render, resize, degrade, prewarm, dispose };
 }

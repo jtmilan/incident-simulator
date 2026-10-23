@@ -7,17 +7,33 @@ import { currentDevice, pickQuality } from './quality.ts';
  * Puts the cluster scene behind the page. Returns a disposer, or null when WebGL isn't available,
  * in which case the static placeholder layout simply stays as it is.
  */
-export function mountScene({ sim, loop }: { sim: Simulation; loop: Loop }): (() => void) | null {
+const nextIdle = () =>
+  new Promise<void>((resolve) => {
+    // Safari has no requestIdleCallback.
+    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(() => resolve(), { timeout: 500 });
+    else setTimeout(resolve, 50);
+  });
+
+/**
+ * Builds the scene in separate idle tasks (build → compile shaders → first frame) so no single
+ * task blocks the page for long, even on devices that render WebGL on the CPU.
+ */
+export async function mountScene({ sim, loop }: { sim: Simulation; loop: Loop }): Promise<(() => void) | null> {
   const canvas = document.createElement('canvas');
   canvas.className = 'scene';
   canvas.setAttribute('aria-hidden', 'true');
 
+  const quality = pickQuality(currentDevice());
   let scene: ReturnType<typeof createClusterScene>;
   try {
-    scene = createClusterScene(canvas, sim, pickQuality(currentDevice()));
+    scene = createClusterScene(canvas, sim, quality);
   } catch {
     return null;
   }
+  document.body.dataset.sceneTier = quality.tier;
+  await nextIdle();
+  scene.prewarm();
+  await nextIdle();
 
   document.body.prepend(canvas);
   document.body.classList.add('has-scene');
@@ -26,9 +42,27 @@ export function mountScene({ sim, loop }: { sim: Simulation; loop: Loop }): (() 
   resize();
   window.addEventListener('resize', resize);
 
+  // Frame cap plus a frame-time governor: when frames get expensive (weak GPU, or WebGL on the CPU)
+  // the scene sheds bloom, resolution and particles, then renders less often, so the page stays responsive.
+  let maxFps = quality.maxFps;
+  let lastRender = Number.NEGATIVE_INFINITY;
+  let pendingDt = 0;
+  let averageCost = 0;
+  let lastDegrade = 0;
   const off = loop.add((dt, now) => {
-    scene.update(dt, now);
+    pendingDt += dt;
+    if (now - lastRender < 1_000 / maxFps - 1) return;
+    const start = performance.now();
+    scene.update(pendingDt, now);
     scene.render();
+    const cost = performance.now() - start;
+    pendingDt = 0;
+    lastRender = now;
+    averageCost = averageCost === 0 ? cost : averageCost * 0.85 + cost * 0.15;
+    if (averageCost > 20 && now - lastDegrade > 2_000) {
+      lastDegrade = now;
+      if (!scene.degrade()) maxFps = Math.max(8, Math.floor(maxFps / 2));
+    }
   });
 
   return () => {
