@@ -35,20 +35,48 @@
         <button type="button" class="btn-primary" data-enter>
           Enter the control room <span aria-hidden="true">→</span>
         </button>
+        <button type="button" class="btn-secondary" data-tour-start>
+          <span class="play" aria-hidden="true">▶</span> 90-second tour
+        </button>
         <p class="hero-hint">No login, nothing to install. It's a simulation: no real cluster runs behind this page.</p>
       </div>
+
+      <section class="infra" aria-labelledby="infra-title">
+        <p class="eyebrow">Under the hood</p>
+        <h2 id="infra-title">How this maps to real infrastructure</h2>
+        <p class="infra-lede">
+          Everything runs in your browser: a deterministic simulator stepping every 100 ms, drawn with Three.js.
+          Each part stands in for a production component, and every "real config" button in the console shows
+          the manifest behind it.
+        </p>
+        <dl class="infra-map" data-infra-map></dl>
+        <h3 class="infra-next">Next: a real backend</h3>
+        <ol class="infra-roadmap">
+          <li>Terraform provisions a small k3s cluster with checkout-api and a CloudNativePG database.</li>
+          <li>Argo CD syncs the same manifests from Git, so a rollback is a revert.</li>
+          <li>
+            Prometheus and OpenTelemetry publish onto the event bus this page already uses, so the console works
+            unchanged against a live cluster.
+          </li>
+        </ol>
+      </section>
     </main>
 
     <section class="console" id="console" aria-labelledby="console-title" inert>
       <header class="console-header">
         <h2 id="console-title" tabindex="-1">Control room</h2>
-        <button type="button" class="btn-ghost" data-back>← Overview</button>
+        <div class="console-header-actions">
+          <button type="button" class="btn-ghost" data-tour-start data-console-tour>
+            <span aria-hidden="true">▶</span> Tour
+          </button>
+          <button type="button" class="btn-ghost" data-back>← Overview</button>
+        </div>
       </header>
       <div class="console-grid">
         <aside class="panel" data-region="chaos" aria-label="Chaos experiments">
           <h3 class="panel-title">Chaos experiments</h3>
         </aside>
-        <div class="viewport" data-region="viewport"></div>
+        <div class="viewport" data-region="viewport" data-tour="cluster"></div>
         <aside class="panel" data-region="metrics" aria-label="Service health" tabindex="0">
           <h3 class="panel-title">Service health</h3>
         </aside>
@@ -59,8 +87,23 @@
     </section>
 
     <footer class="site-footer">
-      <p class="provenance" data-provenance></p>
-      <p>Simulation: no real cluster runs behind this page.</p>
+      <div class="footer-top">
+        <p class="status footer-status" data-footer-status data-level="ok">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span class="status-label" data-status-label>OK</span>
+          <span data-status-text>SLO 99.9% · budget 100% · all systems normal</span>
+        </p>
+        <nav class="footer-links" aria-label="Footer">
+          <a href="#tour">Take the tour</a>
+          <a href="#console">Open the control room</a>
+          <a href="https://github.com/jtmilan/chaos-control-room">Source on GitHub</a>
+        </nav>
+      </div>
+      <p class="wordmark" aria-hidden="true">chaos-control-room</p>
+      <div class="footer-meta">
+        <p class="provenance" data-provenance></p>
+        <p>Simulation: no real cluster runs behind this page.</p>
+      </div>
     </footer>
   </body>
 </html>

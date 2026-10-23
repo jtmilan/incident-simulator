@@ -7,12 +7,14 @@ import {
   DB_PROMOTING_MS,
   DB_RECONNECTING_MS,
   HPA_SCALE_DOWN_STABILIZATION_MS,
+  HPA_SYNC_PERIOD_MS,
   HPA_MAX_REPLICAS,
   HPA_MIN_REPLICAS,
   HPA_TARGET_UTILIZATION,
   INITIAL_REPLICAS,
   READINESS_INITIAL_DELAY_MS,
   READINESS_PERIOD_MS,
+  TICK_MS,
 } from '../sim/config.ts';
 
 // The production manifests and queries each panel stands in for. Numbers come from the simulator's
@@ -207,6 +209,34 @@ spec:
     ],
   },
 };
+
+/** "How this maps to real infrastructure": each simulated part and the production component it stands for. */
+export const INFRA_MAP: readonly { part: string; real: string }[] = [
+  {
+    part: 'Pods, kills and self-healing',
+    real: `Deployment and ReplicaSet with a readiness probe (${s(READINESS_INITIAL_DELAY_MS)} s delay, every ${s(READINESS_PERIOD_MS)} s), zone spread and a PodDisruptionBudget.`,
+  },
+  {
+    part: 'Autoscaling',
+    real: `HorizontalPodAutoscaler (autoscaling/v2): ${Math.round(HPA_TARGET_UTILIZATION * 100)}% CPU target, ${s(HPA_SYNC_PERIOD_MS)} s sync, ${HPA_MIN_REPLICAS}–${HPA_MAX_REPLICAS} replicas, ${s(HPA_SCALE_DOWN_STABILIZATION_MS)} s scale-down stabilization.`,
+  },
+  {
+    part: 'Error budget and paging',
+    real: `PrometheusRule recording rules and a multi-window burn-rate alert (${BURN_RATE_PAGE}× over 1 h and 5 min), routed by Alertmanager.`,
+  },
+  {
+    part: 'Database failover',
+    real: 'CloudNativePG cluster: a primary and a replica in separate zones, automatic promotion, the old primary rejoining through pg_rewind.',
+  },
+  {
+    part: 'Simulation engine',
+    real: `Seeded and deterministic: ${TICK_MS} ms ticks and a typed event bus, the same contract a Kubernetes watch or Prometheus stream would publish.`,
+  },
+  {
+    part: 'Delivery',
+    real: 'GitHub Actions: lint, types, unit and browser tests, accessibility and Lighthouse budgets, then GitHub Pages with build provenance and a smoke test of the deployed commit.',
+  },
+];
 
 export type Segment = { text: string; kind: 'key' | 'comment' | 'plain' };
 

@@ -66,6 +66,7 @@ export function mountConsole(regions: ConsoleRegions, { sim, loop }: { sim: Simu
   let lastKillAt: number | null = null;
   const cards = new Map<string, { button: HTMLButtonElement; state: HTMLElement; bar: HTMLElement }>();
   const actions = el('div', 'actions');
+  actions.dataset.tour = 'actions';
   for (const action of ACTIONS) {
     const button = el('button', 'action');
     button.type = 'button';
@@ -242,6 +243,8 @@ export function mountConsole(regions: ConsoleRegions, { sim, loop }: { sim: Simu
         pendingAnnouncement = entry.message;
       }
     }),
+    // A new incident retires the last postmortem card.
+    sim.bus.on('incidentOpened', () => (card.hidden = true)),
     sim.bus.on('postmortemReady', ({ postmortem }) => {
       showPostmortem(postmortem);
       live.textContent = `Incident resolved. Postmortem: time to recover ${formatClock(postmortem.timeToRecoverMs)}.`;

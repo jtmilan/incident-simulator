@@ -4,7 +4,12 @@
 
 const NARROW = '(max-width: 64rem)';
 
-export function mountMobileTabs(grid: HTMLElement, panels: { id: string; label: string; panel: HTMLElement }[]): void {
+export interface MobileTabs {
+  /** On the tab layout, selects the tab whose panel holds `node` (used by the guided tour). */
+  reveal(node: Element): void;
+}
+
+export function mountMobileTabs(grid: HTMLElement, panels: { id: string; label: string; panel: HTMLElement }[]): MobileTabs {
   const list = document.createElement('div');
   list.className = 'mobile-tabs';
   list.setAttribute('role', 'tablist');
@@ -70,4 +75,12 @@ export function mountMobileTabs(grid: HTMLElement, panels: { id: string; label: 
   grid.prepend(list);
   narrow.addEventListener('change', applyLayout);
   applyLayout();
+
+  return {
+    reveal(node) {
+      if (!narrow.matches) return;
+      const index = panels.findIndex(({ panel }) => panel.contains(node));
+      if (index >= 0 && index !== selected) select(index);
+    },
+  };
 }

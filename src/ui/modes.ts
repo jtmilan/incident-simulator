@@ -1,3 +1,5 @@
+import { parseDeepLink } from './scenarios.ts';
+
 // Hero ⇄ console: the iris transition and the page mode, kept free of the DOM so it is testable.
 
 export type Mode = 'hero' | 'opening' | 'console' | 'closing';
@@ -38,7 +40,8 @@ export function irisRadius(x: number, y: number, width: number, height: number):
 }
 
 export function parseMode(location: { hash: string; search: string }): 'hero' | 'console' {
-  if (location.hash === '#console') return 'console';
+  // #console, #tour and #scenario=… all land in the control room.
+  if (parseDeepLink(location.hash)) return 'console';
   const params = new URLSearchParams(location.search);
   return params.has('console') || params.get('mode') === 'console' ? 'console' : 'hero';
 }

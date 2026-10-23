@@ -11,7 +11,7 @@ import {
   READINESS_INITIAL_DELAY_MS,
   READINESS_PERIOD_MS,
 } from '../sim/config.ts';
-import { highlightLine, REAL_CONFIG } from './real-config.ts';
+import { highlightLine, INFRA_MAP, REAL_CONFIG } from './real-config.ts';
 
 const text = (key: keyof typeof REAL_CONFIG) => REAL_CONFIG[key].files.map((f) => f.body).join('\n') + REAL_CONFIG[key].intro;
 
@@ -48,6 +48,19 @@ describe('real config matches the simulation', () => {
     expect(db).toContain('instances: 2');
     expect(db).toContain('failoverDelay: 0');
     expect(db).toContain('~24 s');
+  });
+});
+
+describe('INFRA_MAP', () => {
+  it('names the real component behind each simulated part, with the simulation\'s own numbers', () => {
+    const text = INFRA_MAP.map((row) => `${row.part}: ${row.real}`).join('\n');
+    expect(INFRA_MAP.length).toBeGreaterThanOrEqual(5);
+    expect(text).toContain('readiness probe (3 s delay, every 2 s)');
+    expect(text).toContain('60% CPU target, 15 s sync, 3–10 replicas, 300 s scale-down stabilization');
+    expect(text).toContain('14.4× over 1 h and 5 min');
+    expect(text).toContain('CloudNativePG');
+    expect(text).toContain('100 ms ticks');
+    expect(text).toContain('GitHub Pages with build provenance');
   });
 });
 

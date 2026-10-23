@@ -55,6 +55,32 @@
   box-shadow: 0 8px 32px rgb(76 201 240 / 35%);
 }
 
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--color-line-strong);
+  border-radius: 999px;
+  background: rgb(10 14 19 / 70%);
+  color: var(--color-text);
+  font: 600 var(--text-md) / 1 var(--font-sans);
+  cursor: pointer;
+  transition:
+    transform var(--dur-hover) var(--ease-out),
+    border-color var(--dur-hover) var(--ease-out);
+}
+
+.btn-secondary:hover {
+  border-color: var(--color-accent);
+  transform: translateY(-1px);
+}
+
+.btn-secondary .play {
+  font-size: 0.7em;
+  color: var(--color-accent);
+}
+
 .btn-ghost {
   padding: var(--space-2) var(--space-4);
   border: var(--border);
@@ -148,6 +174,11 @@ body[data-mode='opening'] .glow {
   padding: var(--space-3) var(--space-6);
 }
 
+.console-header-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
 .console-header h2 {
   margin: 0;
   font-size: var(--text-lg);
@@ -210,6 +241,83 @@ body[data-mode='opening'] .glow {
       'chaos' auto
       'metrics' auto
       'timeline' auto / 1fr;
+  }
+}
+
+/* ---- How this maps to real infrastructure ---- */
+.infra {
+  max-width: 60rem;
+  margin-top: clamp(var(--space-16), 18vh, 10rem);
+  padding: var(--space-8);
+  border: var(--border);
+  border-radius: var(--radius-md);
+  background: rgb(13 19 26 / 90%);
+}
+
+.infra h2 {
+  margin: 0;
+  font-size: clamp(1.5rem, 2.5vw + 0.5rem, 2.25rem);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.infra-lede {
+  max-width: 44rem;
+  margin: var(--space-4) 0 var(--space-8);
+}
+
+.infra-map {
+  margin: 0;
+}
+
+.infra-row {
+  display: grid;
+  grid-template-columns: minmax(10rem, 14rem) 1fr;
+  gap: var(--space-1) var(--space-6);
+  padding: var(--space-4) 0;
+  border-top: var(--border);
+}
+
+.infra-row dt {
+  padding-top: 2px;
+  font: 400 var(--text-xs) / 1.5 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.infra-row dd {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.infra-next {
+  margin: var(--space-8) 0 var(--space-3);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.infra-roadmap {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: var(--text-sm);
+}
+
+.infra-roadmap li::marker {
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 40rem) {
+  .infra {
+    padding: var(--space-6) var(--space-4);
+  }
+
+  .infra-row {
+    grid-template-columns: 1fr;
   }
 }
 
