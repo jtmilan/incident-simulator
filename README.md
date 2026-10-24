@@ -1,8 +1,8 @@
-# Chaos Control Room
+# Incident Simulator
 
 > Break a simulated production platform (kill pods, inject errors or latency, surge traffic, fail over the database) and watch SLOs, alerts, autoscaling and self-healing respond in real time.
 
-**Live:** https://jtmilan.github.io/chaos-control-room/ (goes live at the end of Phase 1)
+**Live:** https://jtmilan.github.io/incident-simulator/
 **Status:** in development, v0.1
 
 ## What it is
@@ -136,7 +136,7 @@ Coming in Phase 1:
 
 ```bash
 npm ci
-npm run dev       # http://localhost:5173/chaos-control-room/
+npm run dev       # http://localhost:5173/incident-simulator/
 npm test
 ```
 

@@ -3,7 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 // BASE_URL points the same smoke test at the live site after a deploy.
 // Without it, Playwright builds and serves the production bundle locally.
 const liveUrl = process.env.BASE_URL;
-const localUrl = 'http://localhost:4173/chaos-control-room/';
+const localUrl = 'http://localhost:4173/incident-simulator/';
 
 export default defineConfig({
   testDir: 'tests/e2e',

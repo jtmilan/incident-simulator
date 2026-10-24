@@ -1,4 +1,4 @@
-export const DEFAULT_REPO_URL = 'https://github.com/jtmilan/chaos-control-room';
+export const DEFAULT_REPO_URL = 'https://github.com/jtmilan/incident-simulator';
 
 export interface BuildEnv {
   readonly VITE_COMMIT_SHA?: string;

@@ -17,7 +17,7 @@ test('hero → console through the iris, labels on, then back', async ({ page },
   await page.goto(entry);
   await page.mouse.move(700, 450); // CPU WebGL in headless Chromium: the scene loads on engagement
 
-  await expect(page.getByRole('heading', { level: 1, name: 'Chaos Control Room' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Incident Simulator' })).toBeVisible();
   await expect(page.locator('body')).toHaveAttribute('data-mode', 'hero');
   await expect(page.locator('body')).toHaveClass(/has-scene/, { timeout: 15_000 });
   await page.waitForTimeout(1_500);

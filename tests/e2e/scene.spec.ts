@@ -57,7 +57,7 @@ test('keeps the page working when WebGL is unavailable', async ({ page }) => {
 
   await page.goto(expectedSha ? `./?v=${expectedSha}` : './');
   await page.waitForTimeout(1_500);
-  await expect(page.getByRole('heading', { level: 1, name: 'Chaos Control Room' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Incident Simulator' })).toBeVisible();
   await expect(page.locator('canvas.scene')).toHaveCount(0);
   expect(crashes).toEqual([]);
 });

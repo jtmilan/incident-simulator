@@ -37,7 +37,7 @@ process.env.VITE_BUILD_TIME ??= new Date().toISOString();
 // the analytics injection can never disagree.
 function headMetaPlugin(env: Record<string, string>): Plugin {
   return {
-    name: 'chaos-control-room:head-meta',
+    name: 'incident-simulator:head-meta',
     apply: 'build',
     transformIndexHtml: {
       order: 'post',
@@ -54,7 +54,7 @@ function headMetaPlugin(env: Record<string, string>): Plugin {
 }
 
 export default defineConfig(({ mode }) => ({
-  base: '/chaos-control-room/',
+  base: '/incident-simulator/',
   plugins: [headMetaPlugin(loadEnv(mode, process.cwd(), 'VITE_'))],
   build: {
     target: 'es2022',

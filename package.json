@@ -1,5 +1,5 @@
 {
-  "name": "chaos-control-room",
+  "name": "incident-simulator",
   "version": "0.0.0",
   "private": true,
   "description": "Interactive browser simulation of a Kubernetes platform under failure: chaos experiments, SLOs, burn-rate alerts, autoscaling, self-healing and database failover.",

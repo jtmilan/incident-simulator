@@ -33,7 +33,7 @@ test('renders the placeholder with build provenance and a CSP', async ({ page },
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(entry);
 
-  await expect(page.getByRole('heading', { level: 1, name: 'Chaos Control Room' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Incident Simulator' })).toBeVisible();
   await expect(page.getByTestId('status')).toContainText('SLO 99.9% · budget 100% · all systems normal');
   await expect(page.locator('.site-footer').getByText('Simulation: no real cluster runs behind this page.')).toBeVisible();
 

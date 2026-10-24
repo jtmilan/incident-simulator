@@ -193,7 +193,7 @@ test('hero: infra map and the large footer, with the live status', async ({ page
   await expect(infra).toContainText('Argo CD');
   const footer = page.locator('.site-footer');
   await expect(footer.locator('[data-footer-status]')).toContainText('all systems normal');
-  await expect(footer.getByRole('link', { name: 'Source on GitHub' })).toHaveAttribute('href', 'https://github.com/jtmilan/chaos-control-room');
+  await expect(footer.getByRole('link', { name: 'Source on GitHub' })).toHaveAttribute('href', 'https://github.com/jtmilan/incident-simulator');
   await footer.scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath('hero-full.png'), fullPage: true });
 

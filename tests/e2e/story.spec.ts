@@ -55,7 +55,7 @@ test('infra and footer reveal once, end in place, and keep their accessible name
   const wordmark = page.locator('.wordmark');
   await wordmark.scrollIntoViewIfNeeded();
   await page.waitForTimeout(1_600);
-  await expect(wordmark.locator('.ch')).toHaveCount('chaos-control-room'.length);
+  await expect(wordmark.locator('.ch')).toHaveCount('incident-simulator'.length);
   expect(await wordmark.locator('.ch').evaluateAll((els) => els.filter((e) => (e as HTMLElement).style.transform !== '').length)).toBe(0);
   await expect(wordmark).toHaveAttribute('aria-hidden', 'true');
   expect(await blockingViolations(page)).toEqual([]);
@@ -93,7 +93,7 @@ test('without the motion chunk every section is complete', async ({ page }) => {
   await scrollTo(page, 99_999);
   await expect(page.getByRole('heading', { name: 'How this maps to real infrastructure' })).toBeVisible();
   await expect(page.locator('.infra-row')).toHaveCount(6);
-  await expect(page.locator('.wordmark')).toHaveText('chaos-control-room');
+  await expect(page.locator('.wordmark')).toHaveText('incident-simulator');
   expect(errors).toEqual([]);
 });
 
